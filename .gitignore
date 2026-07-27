@@ -1,0 +1,5 @@
+# Ignorar archivos de entorno / secretos
+.env.example
+
+# Ignorar plan inicial
+PLAN_DESARROLLO_AI_ENGINEERING_MODULO_1.md
