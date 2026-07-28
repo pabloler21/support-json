@@ -11,8 +11,8 @@ can be redirected to a file and stay valid JSON.
 import argparse
 import sys
 
-from src.prompt_builder import build_messages
 from src.openai_client import create_chat_completion
+from src.prompt_builder import build_messages
 
 
 def main():
