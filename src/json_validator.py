@@ -3,6 +3,9 @@
 The contract is specified in reports/contrato_json.md; this module is the single
 place where it is enforced. It must stay importable without an API key so the
 tests can run offline, which is why it imports nothing from openai_client.
+
+Definitions run from the inside out: the exception first, then the vocabularies,
+then the model, and the public entry point last, once everything it uses exists.
 """
 
 from enum import StrEnum
@@ -14,8 +17,18 @@ from pydantic import (
     Field,
     StrictFloat,
     StringConstraints,
+    ValidationError,
     field_validator,
 )
+
+
+class ContractViolationError(Exception):
+    """The model returned something that does not satisfy the JSON contract.
+
+    Deliberately distinct from the RuntimeError raised by openai_client: that
+    one means the call failed, this one means the call succeeded and the answer
+    is unusable. Only the second is a signal about the quality of the prompt.
+    """
 
 
 class Category(StrEnum):
@@ -79,3 +92,28 @@ class SupportResponse(BaseModel):
         if len(actions) != len(set(actions)):
             raise ValueError("actions must not contain duplicate values")
         return actions
+
+
+def validate_response(content: str) -> SupportResponse:
+    """Parse and validate the raw text the model returned.
+
+    Takes the string as it came back from the API, not a dict: parsing and
+    schema validation are one job and pydantic reports both as the same error,
+    so splitting them would spread one concern across two modules.
+
+    Args:
+        content: The raw response body, expected to be a JSON object.
+
+    Returns:
+        The validated response.
+
+    Raises:
+        ContractViolationError: If the text is not valid JSON, or is valid JSON
+            that breaks the contract. Callers never need to import pydantic.
+    """
+    try:
+        return SupportResponse.model_validate_json(content)
+    except ValidationError as error:
+        raise ContractViolationError(
+            f"The model output does not satisfy the JSON contract: {error}"
+        ) from error
