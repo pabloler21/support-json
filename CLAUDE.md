@@ -73,8 +73,8 @@ validación, métricas persistidas, seguridad, tests y documentación.
 | System prompt zero-shot | 805 tokens |
 | Los 5 ejemplos cuestan | **586 tokens** |
 | Costo por consulta | ~$0,00026 |
-| Latencia, régimen tibio | mediana 2392 ms (n=15, rango 873 ms) |
-| Latencia, primera llamada | 3176-23703 ms — **impredecible** |
+| Latencia | mediana 2486 ms (n=24), p25 2281, p75 3335 |
+| Latencia, outliers | 10518 y 23703 ms, ambos en primera llamada de una tanda |
 | `TEMPERATURE` | 0.7 (pendiente bajarla) |
 | `MAX_TOKENS` | 300 |
 
@@ -258,10 +258,11 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 ### Inmediato
 
-- [ ] Correr C4 para confirmar la regla de intención principal (control:
-      `tokens_prompt` ~1425).
-- [ ] Documentar la iteración 7 en `iteraciones.md`: el quinto ejemplo, su resultado
-      negativo, y el cambio de la regla de precedencia por intención principal.
+- [ ] **C2 es el único fallo abierto** de las 5 consultas: el `answer` reconoce que
+      falta información pero emite `escalate_to_supervisor` en vez de
+      `request_more_information`.
+- [ ] Bajar `TEMPERATURE`. Los cambios de prompt están cerrados, así que ya no hay
+      riesgo de mezclar dos variables.
 
 ### Fases que faltan
 
