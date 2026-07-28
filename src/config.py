@@ -1,14 +1,14 @@
-"""Configuración del proyecto: carga variables de entorno y expone constantes.
+"""Project configuration: loads environment variables and exposes constants.
 
-Este módulo NO crea clientes ni ejecuta lógica: solo lee valores. Así puede
-importarse desde cualquier parte (incluidos los tests) sin necesitar una API key.
+This module does NOT create clients or run any logic, it only reads values.
+That keeps it importable from anywhere (tests included) without an API key.
 """
 
 import os
 
 from dotenv import load_dotenv
 
-load_dotenv()  # Cargar variables de entorno desde el archivo .env
+load_dotenv()  # Load environment variables from the .env file
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -16,8 +16,8 @@ MODEL = os.getenv("MODEL", "gpt-4o-mini")
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "100"))
 
-# Precios en USD por cada 1M de tokens (gpt-4o-mini).
-# Input y output se cobran distinto, por eso van separados: metrics.py necesita
-# los dos para calcular estimated_cost_usd.
+# Prices in USD per 1M tokens (gpt-4o-mini).
+# Input and output are billed at different rates, so they are kept apart:
+# metrics.py needs both to compute estimated_cost_usd.
 INPUT_COST_PER_1M_TOKENS = float(os.getenv("INPUT_COST_PER_1M_TOKENS", "0.15"))
 OUTPUT_COST_PER_1M_TOKENS = float(os.getenv("OUTPUT_COST_PER_1M_TOKENS", "0.60"))
