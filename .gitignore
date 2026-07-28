@@ -1,6 +1,16 @@
-# Ignorar archivos de entorno / secretos
-.env.example
+# Secretos: .env NUNCA se commitea.
+# .env.example SÍ se commitea: es la plantilla sin credenciales.
 .env
+
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
 
 # Ignorar plan inicial
 PLAN_DESARROLLO_AI_ENGINEERING_MODULO_1.md
