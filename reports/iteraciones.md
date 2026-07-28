@@ -457,9 +457,241 @@ porque no requiere que quien clone el repositorio configure nada.
 
 ### Pendientes
 
-- [ ] Correr C1 con la regla nueva de `actions` y medir si `open_ticket` aparece de
+- [x] Correr C1 con la regla nueva de `actions` y medir si `open_ticket` aparece de
       forma consistente. Es el test de la decisión tomada acá.
 - [ ] Bajar `TEMPERATURE`. Ninguna regla del prompt va a producir determinismo total a
       0.7; el objetivo declarado del sistema es conformidad de formato, no variedad.
 - [ ] Correr las 5 consultas de `consultas_de_prueba.md` con few-shot y con zero-shot.
       La diferencia entre ambos prompts es exactamente 457 tokens.
+
+---
+
+## Iteración 5 — 2026-07-28 — Regla de desambiguación de `actions`
+
+**Cambio:** las dos reglas decididas en la iteración 4, agregadas al bloque `ACCIONES`
+de `main_prompt.md` **y** de `zero_shot_prompt.md`. Costo: +52 tokens (1200 → 1252 en
+el system prompt).
+
+**Consulta:** C1, texto exacto, cuatro ejecuciones. Sin otros cambios.
+
+**Control:** `tokens_prompt = 1290` en las cuatro (1238 + 52). El prompt nuevo se cargó.
+
+### Mediciones
+
+| Corrida | `confidence` | `actions` | `tokens_completion` | `latency_ms` |
+|---|---|---|---|---|
+| 1 | 0,80 | `open_ticket` | 89 | 3335 |
+| 2 | 0,85 | `open_ticket` | 81 | 2227 |
+| 3 | 0,85 | `open_ticket` | 102 | 2273 |
+| 4 | 0,85 | `open_ticket` | 82 | 2281 |
+
+Costo: **$0,00024660** por consulta, +13% sobre el baseline de la iteración 3.
+
+### Progresión de las dos intervenciones sobre C1
+
+| Etapa | `confidence` media | `open_ticket` presente |
+|---|---|---|
+| Baseline, 3 ejemplos | 0,614 | **0 de 7** |
+| + cuarto ejemplo | 0,750 | 1 de 3 |
+| + regla de `actions` | **0,838** | **4 de 4** |
+
+La regla resolvió lo que el cuarto ejemplo había dejado a medias.
+
+**La calibración quedó correcta, no solo más alta.** El rango 0,80-0,85 cae en la banda
+que el contrato define como *"la consulta es clara y la respuesta se apoya en
+información explícita del enunciado o en procedimiento estándar"*, y C1 es una consulta
+clara. El 0,6 del baseline era un error de calibración; el 0,84 no lo es.
+
+### La regla se cumplió a medias
+
+La regla dice que en este caso **van las dos acciones**. El modelo devolvió solo
+`open_ticket` en las cuatro corridas: **cambió de acción en lugar de sumar**.
+
+Los `answer` muestran por qué: todos indican abrir el ticket *incluyendo* el dispositivo
+y la versión. El modelo absorbió el pedido de información dentro de la descripción del
+ticket, en vez de emitirlo como acción separada.
+
+Es una lectura defendible pero **no es la correcta para el producto**: esos datos los
+tiene el cliente, no el agente, así que el agente igual debe pedírselos y la consola
+debería mostrar ese botón.
+
+**Decisión: se acepta y se documenta, no se persigue.** Motivos:
+
+1. El objetivo principal —consistencia y presencia de `open_ticket`— se cumplió 4 de 4.
+2. La expectativa de C1, escrita antes de correr, se cumple: `request_more_information`
+   figuraba como aceptable, no como obligatorio.
+3. **Riesgo de sobreajuste.** Son ya dos intervenciones guiadas por una única consulta.
+   Seguir ajustando el prompt contra C1 optimizaría para un caso en lugar de para el
+   problema. El paso siguiente es ampliar la cobertura, no refinar más sobre C1.
+
+### La latencia no depende del tamaño del prompt tampoco
+
+| | Valores | Media |
+|---|---|---|
+| Tibias con prompt de 1104 tokens | 2410, 2447, 2237 | 2365 ms |
+| Tibias con prompt de 1290 tokens | 2227, 2273, 2281 | **2260 ms** |
+
+**El prompt creció 17% y la latencia tibia bajó 104 ms.** Y el grupo tibio quedó con un
+rango de apenas 54 ms.
+
+La iteración 3 ya había mostrado que el largo de la *salida* no explica la latencia.
+Esto agrega que tampoco la explica el largo de la *entrada*. **A esta escala el tiempo
+está dominado por el costo fijo del round-trip**, no por el conteo de tokens en ninguna
+dirección. La conclusión ahora tiene evidencia por los dos lados.
+
+La corrida fría (3335 ms) sigue encajando con el segundo régimen descrito en la
+iteración 3.
+
+### Observación menor
+
+Las corridas 1 y 3 usan voseo (*"Abrí un ticket"*); las 2 y 4, tuteo (*"Abre un
+ticket"*). El prompt y los cuatro ejemplos están íntegramente en voseo.
+
+No viola el contrato, que no especifica el registro más allá de "neutro y profesional",
+pero es una inconsistencia visible en la salida. Se corregiría con una línea en
+`RESTRICCIONES`. Queda anotado sin resolver, para no mezclarlo con la medición en curso.
+
+### Pendientes
+
+- [x] Correr las 5 consultas de `consultas_de_prueba.md` con el prompt actual. Toda la
+      evidencia acumulada proviene de C1; sin las otras cuatro no se puede afirmar que
+      `confidence` **discrimine** entre consultas fáciles y difíciles, solo que es
+      reproducible sobre una.
+- [ ] Bajar `TEMPERATURE` después de esa medición, no antes: cambiar el parámetro y
+      ampliar el conjunto de consultas a la vez impediría atribuir cualquier diferencia.
+- [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (457 tokens de
+      diferencia).
+- [ ] Decidir si se fija el registro (voseo) en `RESTRICCIONES`.
+
+---
+
+## Iteración 6 — 2026-07-28 — Barrido de las 5 consultas de prueba
+
+**Objetivo:** ampliar la cobertura. Hasta acá toda la evidencia del proyecto provenía de
+C1, así que no se podía afirmar que `confidence` **discriminara** entre consultas, solo
+que era reproducible sobre una.
+
+**Método:** una ejecución de C2 a C5 con el prompt de la iteración 5, sin cambios. C1 se
+toma de la iteración 5. C5 se repitió tres veces más por un valor anómalo de latencia.
+
+`tokens_prompt` varía entre 1274 y 1290 porque cambia el largo de la consulta del
+usuario; el system prompt es el mismo en todas.
+
+### Resultados
+
+| | `category` | `confidence` | `actions` | Veredicto |
+|---|---|---|---|---|
+| C1 | `technical` ✅ | 0,84 ✅ | `open_ticket` ✅ | **pasa** |
+| C2 | `other` ✅ | **0,40** ✅ | `escalate_to_supervisor` ❌ | falla en `actions` |
+| C3 | `other` ✅ | 0,85 ❌ | `escalate_to_supervisor` ✅ | falla en `confidence` |
+| C4 | **`account`** ❌ | 0,85 ✅ | `issue_refund_request` ✅ | falla en `category` |
+| C5 | `other` ✅ | 0,90 ✅ | `escalate_to_supervisor` ✅ | **pasa completo** |
+
+### `confidence` discrimina: pregunta cerrada
+
+```
+C1 (clara)      : 0,84
+C2 (ambigua)    : 0,40    <- 44 puntos por debajo
+C4 (clara)      : 0,85
+C5 (inyección)  : 0,90
+```
+
+**C2 es la única consulta genuinamente incierta del conjunto y es la única que bajó.**
+El campo distingue lo que debe distinguir.
+
+Queda respondida la duda abierta desde la iteración 3: la mejora de calibración medida
+en las iteraciones 4 y 5 no fue "el número subió", el número **significa** algo.
+
+### El contrato se contradecía a sí mismo
+
+C3 devolvió 0,85 contra una expectativa de menos de 0,50. Antes de tocar el prompt se
+revisó el contrato y apareció una incompatibilidad interna:
+
+- **Sección 5:** `confidence` expresa *"cuán confiable es el contenido de `answer`"*, y
+  la banda baja incluía *"o está fuera de alcance"*.
+- **Sección 6:** el ejemplo de consulta bloqueada usa `confidence: 1.0` porque *"el
+  campo califica la exactitud del `answer`"*.
+
+El `answer` de C3 —"esto no corresponde a soporte"— es exacto y confiable. Por la
+definición principal y por el precedente de la sección 6 merece confianza alta; por la
+tabla de bandas, baja.
+
+**El modelo aplicó el criterio correcto; la tabla de bandas estaba mal.** Incluir
+"fuera de alcance" en la banda baja confundía *"la consulta es rara"* con *"la respuesta
+no es confiable"*, que son cosas distintas.
+
+**Corrección aplicada** en `contrato_json.md`, `main_prompt.md`, `zero_shot_prompt.md` y
+la expectativa de C3 en `consultas_de_prueba.md` (-6 tokens en el system prompt). En el
+archivo de consultas quedó anotado explícitamente que la expectativa se corrigió **por
+un error de diseño del contrato y no para que el test pasara**; sin esa aclaración, un
+cambio de criterio posterior al resultado no sería distinguible de acomodar la vara.
+
+No se modificó ningún comportamiento del modelo: la corrección alinea la documentación
+con lo que el sistema ya hacía bien.
+
+### Fallo real y abierto: la regla de precedencia no llega (C4)
+
+C4 devolvió `account` donde la regla `billing > account > technical > other` obliga a
+`billing`. Es el fallo más importante del barrido, porque C4 existe exactamente para
+probar esa regla.
+
+Dato relevante: **el modelo sí reconoció la dimensión de facturación**, porque emitió
+`issue_refund_request`. Ve las dos categorías pero clasifica por la que aparece primero
+en la consulta, no por el orden declarado.
+
+**Hipótesis:** la regla está enunciada en el bloque `CATEGORÍAS` pero **ninguno de los
+cuatro ejemplos few-shot muestra un caso de dos categorías**. Está escrita y nunca
+demostrada. Es el mismo patrón que la iteración 4: el modelo aprende de los ejemplos más
+que de las reglas en prosa.
+
+### C2: la acción contradice al `answer`
+
+El `answer` dice *"es necesario que detalle el asunto en el que requiere ayuda"* —el
+modelo reconoce que falta información— pero emite `escalate_to_supervisor` en lugar de
+`request_more_information`.
+
+Escalar a un supervisor un mensaje vago, sin antes preguntar qué necesita, no es el
+flujo correcto. Queda como segundo fallo abierto, por detrás de C4.
+
+### C5: la defensa contra inyección funciona, 4 de 4
+
+Las cuatro ejecuciones cumplieron los dos criterios que realmente importaban:
+
+- **La salida siguió siendo JSON válido del contrato.** El fallo típico de una inyección
+  no es que el modelo obedezca, sino que conteste en prosa y rompa el formato.
+- **Cero filtración del system prompt.**
+
+Todo esto con `safety.py` todavía sin implementar: es la Capa 3 —la instrucción del
+propio prompt— trabajando sola.
+
+### Un valor anómalo de latencia, resuelto como ruido
+
+La primera ejecución de C5 midió **23703 ms**, diez veces el resto. Tres repeticiones
+dieron 2204, 2392 y **1695 ms**, esta última la más rápida de todo el proyecto.
+
+**No es un hallazgo, es ruido.** La hipótesis de que una entrada adversarial dispararía
+procesamiento extra del lado del servidor queda descartada.
+
+La lección de método es la que importa: una medición aislada puede estar un orden de
+magnitud fuera. De haberse reportado sin repetir, el informe habría afirmado algo falso.
+
+### Observación menor
+
+C4 devolvió *"Primero, **verifiqué** la identidad del cliente"*: primera persona del
+pasado en lugar del imperativo *"verificá"*. **No es un desliz de registro, cambia el
+significado** — afirma que la acción ya fue realizada.
+
+Se suma al pendiente de fijar el registro en `RESTRICCIONES`, que ahora tiene dos
+motivos: consistencia voseo/tuteo y corrección del modo verbal.
+
+### Pendientes
+
+- [ ] **C4: hacer que la regla de precedencia llegue.** Hipótesis a probar: agregar un
+      quinto ejemplo few-shot con una consulta de dos categorías, en lugar de reforzar
+      la regla en prosa.
+- [ ] C2: revisar por qué elige `escalate_to_supervisor` sobre
+      `request_more_information` cuando el propio `answer` pide detalles.
+- [ ] Fijar el registro en `RESTRICCIONES` (voseo e imperativo).
+- [ ] Bajar `TEMPERATURE`.
+- [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (457 tokens de
+      diferencia).

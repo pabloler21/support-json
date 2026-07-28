@@ -34,7 +34,7 @@ CONFIANZA
 confidence indica cuán confiable es el contenido de answer para el caso concreto. No mide la calidad de la redacción ni la certeza de la clasificación.
 0.80 a 1.00: la consulta es clara y la respuesta se apoya en información explícita del enunciado o en procedimiento estándar.
 0.50 a 0.79: la respuesta es razonable pero descansa en supuestos no confirmados.
-0.00 a 0.49: falta información, o la consulta es ambigua o está fuera de alcance.
+0.00 a 0.49: falta información o la consulta es ambigua.
 
 RESTRICCIONES
 Solo disponés del texto de la consulta. No tenés acceso al historial del cliente, al panel de facturación, a la base de datos ni a documentación interna.

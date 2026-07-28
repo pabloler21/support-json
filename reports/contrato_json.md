@@ -139,12 +139,27 @@ concreto. No mide la calidad de la redacción ni la certeza de la clasificación
 |---|---|
 | `0.80` – `1.00` | La consulta es clara y la respuesta se apoya en información explícita del enunciado o en procedimiento estándar |
 | `0.50` – `0.79` | La respuesta es razonable pero descansa en supuestos no confirmados |
-| `0.00` – `0.49` | Falta información, o la consulta es ambigua o está fuera de alcance |
+| `0.00` – `0.49` | Falta información, o la consulta es ambigua |
 
 Definir los rangos es lo que hace que el campo signifique algo. Sin esta tabla,
 `confidence` es un número sin unidad y no puede responder ninguna pregunta útil. Los
 ejemplos few-shot del prompt tienen que cubrir al menos dos de estos rangos para que
 el modelo aprenda a moverse dentro de la escala.
+
+### Una consulta fuera de alcance no baja la confianza
+
+La banda baja incluía originalmente el caso "está fuera de alcance". **Era un error de
+diseño** y se corrigió: confundía *"la consulta es rara"* con *"la respuesta no es
+confiable"*, que son cosas distintas.
+
+Si alguien pregunta por vacantes laborales, el `answer` correcto —"esto no corresponde
+a soporte"— es exacto y confiable, así que la confianza es **alta**. Lo que baja la
+confianza es que el contenido del `answer` sea incierto, no que la consulta sea
+inesperada.
+
+Es el mismo criterio que ya aplicaba la sección 6 a las consultas bloqueadas, donde
+`confidence` vale `1.0` porque el `answer` describe con certeza lo que ocurrió. La
+tabla de bandas contradecía ese precedente.
 
 ---
 

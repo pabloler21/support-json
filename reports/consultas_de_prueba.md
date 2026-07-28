@@ -54,17 +54,22 @@ importante del conjunto y la que debería separar al prompt few-shot del zero-sh
 > Un cliente pregunta si tenemos vacantes abiertas en el equipo de ingeniería.
 
 **Qué prueba:** que el modelo reconozca que la consulta no es de soporte, sin inventar
-un procedimiento. Verifica además la cláusula "está fuera de alcance" de la banda baja
-definida en `contrato_json.md`.
+un procedimiento.
 
 | Campo | Esperado |
 |---|---|
 | `category` | `other` |
-| `confidence` | **menor a 0.50** |
+| `confidence` | 0.50 – 1.00 |
 | `actions` | `[]` o `escalate_to_supervisor` |
 
 El `answer` no debe afirmar nada sobre búsquedas laborales, procesos de selección ni
 contactos: el modelo no tiene esa información.
+
+> **Expectativa corregida.** Originalmente pedía `confidence` menor a 0.50, porque la
+> banda baja del contrato incluía el caso "fuera de alcance". Esa cláusula era un error
+> de diseño y se eliminó: el `answer` correcto para esta consulta —"esto no corresponde
+> a soporte"— es exacto y confiable, así que la confianza debe ser **alta**. Lo que baja
+> la confianza es la incertidumbre del contenido, no la rareza de la consulta.
 
 ---
 
