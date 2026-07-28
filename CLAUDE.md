@@ -75,7 +75,7 @@ validación, métricas persistidas, seguridad, tests y documentación.
 | Costo por consulta | ~$0,00026 |
 | Latencia | mediana 2486 ms (n=24), p25 2281, p75 3335 |
 | Latencia, outliers | 10518 y 23703 ms, ambos en primera llamada de una tanda |
-| `TEMPERATURE` | 0.7 (pendiente bajarla) |
+| `TEMPERATURE` | 0.2 (bajada en la iter. 8; **sin efecto medido**, ver abajo) |
 | `MAX_TOKENS` | 300 |
 
 ---
@@ -186,11 +186,20 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 3. **Verificar la variable de control.** `tokens_prompt` tiene que cambiar el número
    esperado cuando se toca el prompt. Si no cambió, el prompt nuevo no se cargó y el
    resto de la corrida no es interpretable.
-4. **Nunca concluir con n=1.** Una medición de latencia dio 23703 ms; tres repeticiones
+4. **⚠️ Hay parámetros que ningún control derivado de la salida puede verificar.**
+   `TEMPERATURE` no toca el prompt, así que `tokens_prompt` queda igual se haya aplicado
+   el cambio o no. Y el negativo genuino ("los valores son idénticos a los de antes") es
+   **la misma evidencia** que produce el error de operación. Para `TEMPERATURE`, `MODEL`
+   y `MAX_TOKENS` el control debe ser una **lectura explícita de la configuración
+   efectiva**: `uv run python -c "from src.config import TEMPERATURE; print(TEMPERATURE)"`.
+   Un control que no distingue el hallazgo del error de operación no es un control.
+5. **Nunca concluir con n=1.** Una medición de latencia dio 23703 ms; tres repeticiones
    dieron ~2100. De haberse reportado sin repetir, el informe habría afirmado algo falso.
-5. **Documentar los fallos y las hipótesis que se cayeron.** El enunciado lo pide dos
+   En la iteración 8, un `confidence: 0.50` en la primera corrida de C2 casi instala una
+   conclusión sobre calibración que n=4 desmintió (media real 0,325).
+6. **Documentar los fallos y las hipótesis que se cayeron.** El enunciado lo pide dos
    veces, y es lo que distingue una bitácora de una lista de logros.
-6. **Iteración ≠ corrida.** Una iteración es un cambio y su medición; las corridas son
+7. **Iteración ≠ corrida.** Una iteración es un cambio y su medición; las corridas son
    muestras dentro de ella. Cuatro ejecuciones de la misma consulta son **una**
    iteración con n=4.
 
@@ -260,9 +269,16 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 - [ ] **C2 es el único fallo abierto** de las 5 consultas: el `answer` reconoce que
       falta información pero emite `escalate_to_supervisor` en vez de
-      `request_more_information`.
-- [ ] Bajar `TEMPERATURE`. Los cambios de prompt están cerrados, así que ya no hay
-      riesgo de mezclar dos variables.
+      `request_more_information`. **Diagnosticado en la iter. 8: es la regla, no el
+      sampling** (0 de 4 a `TEMPERATURE=0.2`, igual que a 0.7). Arreglarlo **reabre el
+      prompt**, y por eso la comparación few-shot vs zero-shot tiene que correrse
+      *después*, sobre el prompt definitivo.
+- [x] Bajar `TEMPERATURE` a 0.2. Hecho en la iter. 8, **con resultado negativo**: la
+      dispersión de `confidence` en C1 no se movió (los mismos 4 valores que a 0.7). Los
+      ejemplos few-shot ya habían colapsado la distribución. Se conserva 0.2 porque no
+      cuesta nada, pero se documenta como decisión de bajo impacto medido — y eso da un
+      argumento **más fuerte** para el informe: en este sistema el prompting redujo la
+      varianza más que el parámetro de sampling.
 
 ### Fases que faltan
 
@@ -285,17 +301,16 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 ### Decisiones abiertas
 
-- [ ] **Bajar `TEMPERATURE`.** El objetivo del sistema es conformidad de formato, no
-      variedad. Hacerlo *después* de cerrar los cambios de prompt, nunca a la vez.
 - [ ] **Fijar el registro en `RESTRICCIONES`.** El modelo alterna voseo y tuteo, y una
       vez devolvió *"verifiqué"* (pasado, primera persona) donde correspondía *"verificá"*
       — eso cambia el significado.
-- [ ] **Alucinación blanda.** El modelo referencia información que no tiene
-      ("departamento de recursos humanos", "las políticas de reembolso"). No inventa
-      datos duros, pero presupone documentos y áreas. Va al informe como limitación.
-- [ ] **C2 falla:** el `answer` dice que falta información pero emite
-      `escalate_to_supervisor` en vez de `request_more_information`.
+- [ ] **Alucinación blanda — 6 apariciones, ya es sistemático.** El modelo referencia
+      información que no tiene ("departamento de recursos humanos", "las políticas de
+      reembolso"). No inventa datos duros, pero presupone documentos y áreas. Va al
+      informe como limitación, y con 6 casos merece **sección propia**, no una línea.
 - [ ] Comparar few-shot vs zero-shot sobre las 5 consultas (586 tokens de diferencia).
+      **Correr esto después de arreglar C2**, porque ese arreglo toca el prompt y la
+      comparación tiene que medir la versión definitiva.
 - [ ] Documentar el uso de IA en el desarrollo — lo pide el enunciado.
 
 ---

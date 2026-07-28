@@ -851,3 +851,156 @@ muestras. Refuerza la regla: **no concluir sobre tiempos con muestras chicas.**
 - [ ] Bajar `TEMPERATURE`, ahora que los cambios de prompt están cerrados.
 - [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (586 tokens de
       diferencia).
+
+---
+
+## Iteración 8 — 2026-07-28 — Bajar `TEMPERATURE` de 0.7 a 0.2
+
+**Cambio:** único, `TEMPERATURE` de `0.7` a `0.2`, aplicado en los tres lugares donde
+vive el valor: `.env`, `.env.example` y el fallback de `src/config.py`. Cambiar solo el
+primero habría dejado el repo publicado corriendo a 0,7 y el informe documentando un
+valor que el código no usa.
+
+**Motivo:** el objetivo declarado del sistema es conformidad de formato, no variedad, y
+`0.7` era el default de fábrica sin justificación medida. La consigna pide justificar
+los parámetros con registro de por qué se eligieron.
+
+**Por qué 0.2 y no 0.0:** `0.0` no garantiza determinismo en la API igual —hay
+no-determinismo por batching y punto flotante—, así que lo que compra sobre 0,2 es menos
+de lo que parece, y a cambio el decoding greedy puede degenerar en repeticiones.
+
+### Expectativa, escrita antes de correr
+
+| Consulta | Predicción |
+|---|---|
+| C1 | sigue pasando; **la dispersión de `confidence` baja** respecto de 0,7 |
+| C2 | **el fallo persiste** |
+| C3, C4, C5 | sin cambios |
+| `tokens_prompt` | **idéntico** |
+| `latency_ms` | sin cambio |
+
+**El control funciona al revés que en las iteraciones anteriores.** Hasta acá
+`tokens_prompt` tenía que *cambiar* el número previsto; esta vez tenía que quedar
+**exactamente igual**, porque temperature no toca el prompt. Si se movía, habían cambiado
+dos cosas a la vez.
+
+**Control cumplido:** `tokens_prompt` constante por consulta en las 11 corridas —
+C1 = 1429 (×4), C2 = 1413 (×4), C4 = 1425, que es el ancla de la iteración 7.
+
+### Resultado principal: negativo. La dispersión no bajó
+
+| | Corridas | Media | Rango |
+|---|---|---|---|
+| C1 a `TEMPERATURE=0.7` (iter. 5) | 0,80 · 0,85 · 0,85 · 0,85 | 0,838 | 0,05 |
+| C1 a `TEMPERATURE=0.2` (iter. 8) | 0,80 · 0,85 · 0,85 · 0,85 | 0,8375 | 0,05 |
+
+**Son los mismos cuatro valores.** La predicción de que la dispersión bajaría se
+falsó por completo: no bajó poco, no bajó nada.
+
+**Interpretación:** los cinco ejemplos few-shot ya habían colapsado la distribución de
+salida sobre este campo. A 0,7 el modelo ya emitía casi siempre el mismo valor, así que
+el parámetro de sampling no tenía margen para actuar.
+
+Esto **invierte la justificación del parámetro para el informe**, y hacia un argumento
+más fuerte: en este sistema *la técnica de prompting redujo la varianza de salida más
+que el parámetro de temperatura*. `TEMPERATURE=0.2` se conserva igual —no cuesta nada y
+es el default defendible para salida estructurada— pero se documenta como **decisión de
+bajo impacto medido**, no como una mejora.
+
+En `tokens_completion` el rango se achicó de 21 a 14 con la media casi idéntica
+(88,5 → 89,0). Con n=4 no alcanza para afirmarlo.
+
+### C2: confirmado como error de regla, no de sampling
+
+| Corrida | `confidence` | `actions` |
+|---|---|---|
+| 1 | 0,50 | `escalate_to_supervisor` |
+| 2 | 0,20 | `escalate_to_supervisor` |
+| 3 | 0,40 | `escalate_to_supervisor` |
+| 4 | 0,20 | `escalate_to_supervisor` |
+
+**0 de 4 con `request_more_information`, a las dos temperaturas.** En las cuatro el
+`answer` diagnostica correctamente que falta información y acto seguido escala. Bajar la
+varianza de muestreo no lo tocó: el fallo es la regla, y arreglarlo exige tocar el
+prompt.
+
+**Una alarma levantada con n=1 que no sobrevivió a n=4.** La primera corrida dio
+`confidence: 0.50` y se señaló que, de sostenerse, debilitaría la evidencia de
+calibración de la iteración 6 —donde el 0,40 de C2 contra el 0,85 del resto era la
+prueba de que el campo discrimina—. Con n=4 la media es **0,325**, *por debajo* del 0,40
+registrado a 0,7, y 3 de 4 caen en banda. El argumento de calibración queda intacto.
+
+Es el caso exacto que la regla "nunca concluir con n=1" existe para prevenir, y esta vez
+se aplicó antes de escribir la conclusión en lugar de después.
+
+**Dato secundario que refuerza la calibración:** la dispersión de `confidence` es 0,30
+en C2 contra 0,05 en C1. El modelo está genuinamente indeciso en la consulta ambigua y
+consistente en la clara. Eso es el comportamiento correcto, y es una evidencia
+independiente de la comparación de medias.
+
+### Latencia: sin efecto
+
+Mediana 2608 ms sobre n=11, contra 2486 ms sobre n=24 a 0,7. No hay motivo teórico para
+esperar un efecto y no aparece. No se afirma nada más: la iteración 7 ya mostró que las
+conclusiones sobre latencia con muestras chicas se caen.
+
+### Estado de las 5 consultas a `TEMPERATURE=0.2`
+
+| | Veredicto |
+|---|---|
+| C1 | pasa (4 de 4) |
+| C2 | **falla en `actions`** (0 de 4) |
+| C3 | pasa |
+| C4 | pasa con el criterio estricto |
+| C5 | pasa completo, sin filtración del system prompt |
+
+**4 de 5, el mismo conjunto que a 0,7.** Ninguna consulta cambió de veredicto.
+
+### Alucinación blanda: 5ª y 6ª aparición
+
+C3 recomienda derivar al *"departamento de recursos humanos"* y C4 dice *"revisá las
+políticas de reembolso"*. Ambas presuponen áreas y documentos que el modelo no conoce.
+
+C3 además roza el criterio en prosa de `consultas_de_prueba.md` (*"el answer no debe
+afirmar nada sobre búsquedas laborales, procesos de selección ni contactos"*). **Se
+cuenta como que pasa**, porque las cinco condiciones numeradas del criterio de éxito son
+JSON parseable, contrato, `category`, `confidence` y acciones obligatorias, y las cumple.
+La alucinación blanda va al informe como **limitación documentada**. Con seis
+apariciones ya no es anécdota: es un patrón sistemático y merece sección propia.
+
+### Pendientes
+
+- [ ] **C2 es el único fallo abierto y ahora está diagnosticado:** es la regla, no el
+      sampling. Arreglarlo reabre el prompt, y eso arrastra una consecuencia de orden —
+      la comparación few-shot vs zero-shot debe correrse **después**, sobre el prompt
+      definitivo.
+- [ ] Fijar el registro en `RESTRICCIONES`. C3 y C4 salieron en tuteo completo.
+- [ ] Alucinación blanda: 6 apariciones. Sección propia en el informe.
+- [x] Bajar `TEMPERATURE`. Hecho, con resultado negativo documentado arriba.
+- [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (586 tokens).
+
+### Lección metodológica: hay parámetros que el control no puede verificar
+
+Las siete iteraciones anteriores usaron `tokens_prompt` como control: si el número
+esperado no cambiaba, el prompt nuevo no se había cargado y la corrida no era
+interpretable.
+
+**Con `TEMPERATURE` ese control no sirve, y el modo de fallo es peligroso.** Temperature
+no toca el prompt, así que `tokens_prompt` queda igual se haya aplicado el cambio o no.
+Y el resultado de esta iteración —*"los valores son idénticos a los de 0,7"*— es
+exactamente lo que se observaría si el cambio nunca se hubiera hecho. El negativo
+genuino y el error de operación producen la misma evidencia.
+
+Se verificó explícitamente antes de dar la iteración por válida:
+
+```bash
+uv run python -c "from src.config import TEMPERATURE; print(TEMPERATURE)"
+```
+
+Devolvió `0.2`, y los tres archivos (`.env`, `.env.example`, `src/config.py`) coinciden.
+
+**Regla general:** para los parámetros que no dejan huella en la salida —`TEMPERATURE`,
+y también `MODEL` o `MAX_TOKENS` cuando no se corta la respuesta— el control tiene que
+ser una **lectura explícita de la configuración efectiva**, no una métrica derivada del
+resultado. Un control que no puede distinguir el hallazgo del error de operación no es
+un control.

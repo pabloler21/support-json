@@ -13,8 +13,8 @@ load_dotenv()  # Load environment variables from the .env file
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 MODEL = os.getenv("MODEL", "gpt-4o-mini")
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", "100"))
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "300"))
 
 # Prices in USD per 1M tokens (gpt-4o-mini).
 # Input and output are billed at different rates, so they are kept apart:
