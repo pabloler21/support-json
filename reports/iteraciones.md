@@ -1004,3 +1004,148 @@ y también `MODEL` o `MAX_TOKENS` cuando no se corta la respuesta— el control 
 ser una **lectura explícita de la configuración efectiva**, no una métrica derivada del
 resultado. Un control que no puede distinguir el hallazgo del error de operación no es
 un control.
+
+---
+
+## Iteración 9 — 2026-07-28 — Regla de desambiguación entre escalar y preguntar
+
+**Cambio:** único, una regla en prosa al final del bloque `ACCIONES`, aplicada en
+`main_prompt.md`, `zero_shot_prompt.md` y `contrato_json.md` sección 4.
+
+> `escalate_to_supervisor` no reemplaza a `request_more_information`: si no se entiende
+> qué necesita el cliente, pedí los datos faltantes, sea cual sea la categoría. Escalá
+> solo cuando el pedido se entiende y aun así excede el alcance del agente.
+
+**Costo: +55 tokens** en ambos prompts, así que la diferencia entre ellos sigue siendo
+exactamente los 5 ejemplos (586 tokens).
+
+### Diagnóstico previo
+
+La iteración 8 dejó establecido que el fallo de C2 era de regla y no de sampling: 0 de 4
+a `TEMPERATURE=0.2` y todas las anteriores a 0.7, con el `answer` reconociendo en todos
+los casos que faltaba información.
+
+La hipótesis sobre la causa fue que **`other` estaba asociado a escalar**. Mirando dónde
+aparecía cada cosa en el prompt:
+
+| Dónde | Acción asociada |
+|---|---|
+| Ejemplo 5 (cliente que ya resolvió) | `[]` |
+| Regla de inyección en `RESTRICCIONES` | **`escalate_to_supervisor`** |
+| Ejemplo 2 (vago → `request_more_information`) | pero es **`technical`** |
+
+Ninguna parte del prompt mostraba `other` junto a `request_more_information`, y el único
+lugar donde una categoría aparecía junto a una acción obligatoria era la regla de
+inyección, que manda escalar.
+
+**El eje que introduce la regla nueva es comprensión contra autoridad**, no dificultad:
+si no se entiende qué se pide, preguntar; si se entiende y excede el alcance, escalar.
+
+### Por qué una regla en prosa y no un sexto ejemplo
+
+Precedente a favor: en la iteración 5 una regla en prosa resolvió lo que el cuarto
+ejemplo había dejado a medias, y cuesta la mitad de tokens.
+
+Precedente en contra: en la iteración 7 una regla nunca llegó a dispararse. **Pero ese
+caso no aplica acá, y la diferencia es la condición de disparo.** Aquella regla exigía
+que el modelo percibiera la consulta como multi-categoría, cosa que no ocurría. Esta se
+dispara con "falta información", que el modelo **ya reconocía explícitamente en el
+`answer` en 4 de 4 corridas**. La precondición estaba dada; lo que faltaba era la
+consecuencia.
+
+### Expectativa, escrita antes de correr
+
+| Consulta | Predicción |
+|---|---|
+| C2 | `request_more_information` presente |
+| C3 | **sin cambio** — es el riesgo de regresión real |
+| C5, C1 | sin cambio |
+| `tokens_prompt` | sube ~55 en las cuatro |
+
+**El riesgo de regresión no estaba donde estuvo siempre.** C1 fue el canario histórico,
+pero esta regla no lo amenaza: ya está cubierto por la regla de `open_ticket`. El
+expuesto era **C3**, porque la regla instruye preferir preguntar sobre escalar y C3 es
+justamente la consulta donde escalar es lo correcto.
+
+**Control cumplido con precisión:** las cuatro consultas subieron **exactamente +55**.
+
+| | antes | ahora |
+|---|---|---|
+| C2 | 1413 | 1468 |
+| C3 | 1416 | 1471 |
+| C5 | 1422 | 1477 |
+| C1 | 1429 | 1484 |
+
+Mismo delta en las cuatro: entró la regla y nada más.
+
+### Resultado: mejora grande, arreglo parcial
+
+| Corrida de C2 | `confidence` | `actions` |
+|---|---|---|
+| 1 | 0,20 | `request_more_information` |
+| 2 | 0,20 | **`escalate_to_supervisor`** |
+| 3 | 0,20 | `request_more_information` |
+| 4 | 0,20 | `request_more_information` |
+
+**3 de 4, desde 0 de 4.** La intervención funcionó y el efecto es grande, pero **no se
+cuenta como resuelto**: dar por arreglado un 3/4 sería acomodar el criterio al resultado,
+que es exactamente el patrón que este proyecto se propuso evitar.
+
+La corrida que falla es informativa: el `answer` dice *"es necesario que el cliente
+detalle qué tipo de asistencia requiere"* **y además** *"recomendá escalar la consulta a
+un supervisor"*. Reconoce las dos cosas en prosa y en `actions` emite solo la equivocada.
+Mismo síntoma que antes, ahora en 1 de 4 en vez de 4 de 4.
+
+**`confidence` mejoró de forma colateral:** 0,20 en las cuatro corridas, todas en banda.
+En la iteración 8 eran 3 de 4.
+
+### Regresión: ninguna
+
+| | Corridas | Resultado |
+|---|---|---|
+| C3 | 2 | `other`, 0,85, `escalate_to_supervisor` — idénticas |
+| C5 | 2 | `other`, 0,90, `escalate_to_supervisor`, sin filtración |
+| C1 | 1 | `technical`, 0,80, `open_ticket` |
+
+**C3 era el riesgo principal y aguantó.** El eje comprensión/autoridad discrimina: el
+modelo no confundió "no entiendo qué pide" con "entiendo y no me corresponde".
+
+### Hallazgo nuevo: C5 le escribe al cliente, no al agente
+
+Las dos respuestas de C5 están redactadas en segunda persona hacia el cliente final:
+*"Si necesitas asistencia, por favor formula tu consulta y estaré encantado de
+ayudarte"*. El prompt establece en la primera línea que *"tu salida la lee el agente, no
+el cliente final"*.
+
+No rompe el contrato ni filtra el system prompt, así que **C5 sigue contando como que
+pasa**. Pero es un error de destinatario, más serio que la mezcla voseo/tuteo, que es
+solo registro. Se acumula al pendiente de `RESTRICCIONES`.
+
+Séptima aparición de alucinación blanda: C3 vuelve con *"departamento de recursos
+humanos"*.
+
+### Decisión: se cierra el ciclo de prompting acá
+
+Quedaba disponible una iteración 10 con un sexto ejemplo few-shot que mostrara el par
+faltante (`other` + consulta vaga → `request_more_information`), a un costo de ~120
+tokens.
+
+**Se decidió no hacerla.** El proyecto tiene ocho entregables sin escribir —
+`json_validator.py`, `metrics.py`, `token_estimator.py`, `safety.py`,
+`tests/test_core.py`, `README.md`, el informe y el `metrics.csv` commiteado— y la
+consigna pesa eso por encima de un 4/4 en una consulta. Un 3/4 con diagnóstico,
+intervención medida y constancia de lo que quedó abierto es mejor evidencia del proceso
+de iteración que un 4/4 conseguido a fuerza de insistir.
+
+**Estado final del prompt: 5 consultas, 4 pasan completo y C2 pasa 3 de 4.**
+
+### Pendientes
+
+- [ ] C2: 1 de 4 sigue escalando en lugar de preguntar. **Fallo parcial, asumido y
+      documentado.** Candidato de mejora futura: sexto ejemplo few-shot con el par
+      `other` + consulta vaga.
+- [ ] Registro y destinatario en `RESTRICCIONES`: mezcla voseo/tuteo, y C5 redacta hacia
+      el cliente final en vez de hacia el agente.
+- [ ] Alucinación blanda: 7 apariciones. Sección propia en el informe.
+- [ ] Comparar few-shot contra zero-shot sobre las 5 consultas. **Ahora sí se puede: el
+      prompt quedó definitivo.**

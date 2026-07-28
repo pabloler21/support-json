@@ -69,8 +69,8 @@ validación, métricas persistidas, seguridad, tests y documentación.
 |---|---|
 | Modelo | `gpt-4o-mini` |
 | Precios | $0,15 / 1M input, $0,60 / 1M output |
-| System prompt few-shot | 1391 tokens |
-| System prompt zero-shot | 805 tokens |
+| System prompt few-shot | 1446 tokens (era 1391 antes de la iter. 9) |
+| System prompt zero-shot | 860 tokens (era 805 antes de la iter. 9) |
 | Los 5 ejemplos cuestan | **586 tokens** |
 | Costo por consulta | ~$0,00026 |
 | Latencia | mediana 2486 ms (n=24), p25 2281, p75 3335 |
@@ -267,12 +267,13 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 ### Inmediato
 
-- [ ] **C2 es el único fallo abierto** de las 5 consultas: el `answer` reconoce que
-      falta información pero emite `escalate_to_supervisor` en vez de
-      `request_more_information`. **Diagnosticado en la iter. 8: es la regla, no el
-      sampling** (0 de 4 a `TEMPERATURE=0.2`, igual que a 0.7). Arreglarlo **reabre el
-      prompt**, y por eso la comparación few-shot vs zero-shot tiene que correrse
-      *después*, sobre el prompt definitivo.
+- [x] **C2, fallo parcial asumido.** Iter. 9 agregó una regla de desambiguación entre
+      `escalate_to_supervisor` y `request_more_information` (eje **comprensión contra
+      autoridad**): pasó de **0 de 4 a 3 de 4**. No se cuenta como resuelto — dar por
+      arreglado un 3/4 sería acomodar el criterio al resultado. Mejora futura candidata:
+      sexto ejemplo few-shot con el par `other` + consulta vaga.
+- [x] **El ciclo de prompting está cerrado.** El prompt es definitivo, así que la
+      comparación few-shot vs zero-shot ya se puede correr.
 - [x] Bajar `TEMPERATURE` a 0.2. Hecho en la iter. 8, **con resultado negativo**: la
       dispersión de `confidence` en C1 no se movió (los mismos 4 valores que a 0.7). Los
       ejemplos few-shot ya habían colapsado la distribución. Se conserva 0.2 porque no

@@ -147,6 +147,35 @@ según la ejecución, y la misma consulta produce acciones distintas cada vez.
 El criterio es que un reporte reproducible merece quedar registrado de inmediato: pedir
 los datos del entorno es un paso adicional, no un motivo para postergar el ticket.
 
+### Segunda regla de desambiguación: escalar contra preguntar
+
+`escalate_to_supervisor` y `request_more_information` se solapan en toda consulta que el
+agente no puede resolver por sí solo, porque "no puedo resolver esto" admite dos causas
+distintas que la definición suelta de cada acción no separa.
+
+> `escalate_to_supervisor` no reemplaza a `request_more_information`. Si no se entiende
+> qué necesita el cliente, corresponde pedir los datos faltantes, sea cual sea la
+> categoría. Se escala solo cuando el pedido se entiende y aun así excede el alcance del
+> agente.
+
+**El eje que separa las dos acciones es comprensión contra autoridad**, no dificultad:
+
+| Situación | Acción |
+|---|---|
+| No se entiende qué se pide | `request_more_information` |
+| Se entiende, y excede el alcance del agente | `escalate_to_supervisor` |
+
+Escalar a un supervisor un mensaje vago, sin antes preguntar qué necesita el cliente, no
+es el flujo correcto: le traslada a otra persona el mismo trabajo de averiguación.
+
+**Origen empírico.** C2 (*"Necesito que me ayuden con lo de siempre"*) devolvió
+`escalate_to_supervisor` en 4 de 4 corridas a `TEMPERATURE=0.2` y en todas las anteriores
+a 0.7, mientras el propio `answer` reconocía que faltaba información. La iteración 8
+descartó que fuera varianza de muestreo. La hipótesis del fallo es que `other` quedaba
+asociado a escalar: el único lugar del prompt donde una categoría aparecía junto a una
+acción obligatoria era la regla de inyección, que manda `other` + `escalate_to_supervisor`,
+y el único ejemplo de `request_more_information` es de categoría `technical`.
+
 ---
 
 ## 5. Semántica de `confidence`
