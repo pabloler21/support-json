@@ -69,17 +69,36 @@ iniciar sesión"*):
 > Si el problema afecta el acceso o los datos de **una cuenta puntual**, es `account`.
 > Si es una falla del producto que le pasaría a **cualquier usuario**, es `technical`.
 
-### Regla de precedencia
+### Regla de intención principal
 
-Cuando una consulta encaja genuinamente en más de una categoría se aplica este orden
-fijo, y se elige la primera que corresponda:
+Cuando una consulta toca más de una categoría, se clasifica por **lo que el cliente
+quiere resolver**, no por todo lo que la consulta menciona.
 
-> `billing` > `account` > `technical` > `other`
+> Ejemplo: *"quiero dar de baja mi cuenta y que me reintegren lo que no usé"* es
+> `account`. La baja es lo que el cliente pide; el reintegro es una tarea derivada.
 
-El orden es fijo y no depende de interpretar qué le importa más al cliente: un
-criterio subjetivo produciría clasificaciones distintas para la misma consulta en cada
-ejecución. `billing` va primero porque involucra dinero; `account` va antes que
-`technical` porque un problema de acceso bloquea todo lo demás.
+Las dimensiones secundarias no se pierden: siguen apareciendo en el `answer` y en
+`actions`. Lo que la categoría responde es a qué equipo corresponde el caso, y eso lo
+determina el pedido, no los temas que roza.
+
+**Esta regla reemplaza a una anterior, y el cambio se documenta porque importa.** El
+contrato definía originalmente un orden fijo de precedencia
+(`billing` > `account` > `technical` > `other`), con el argumento de que `billing` iba
+primero por involucrar dinero. Se descartó por dos motivos:
+
+1. **No llegaba al modelo.** Se intentó dos veces —enunciada en prosa, y después
+   demostrada con un ejemplo few-shot— y en las dos el modelo siguió clasificando por
+   intención principal, de forma consistente. El detalle revelador es que ni siquiera
+   percibía esas consultas como multi-categoría: veía un pedido con un tema secundario
+   adentro, así que la regla nunca llegaba a dispararse.
+2. **El argumento era débil.** Que un caso involucre dinero no lo convierte en su eje.
+   Una solicitud de baja es un evento de cancelación y corresponde al equipo de cuentas;
+   el reembolso es una consecuencia.
+
+El motivo por el que se había elegido un orden fijo era evitar que un criterio subjetivo
+produjera clasificaciones distintas en cada ejecución. **Ese riesgo no se materializó:**
+el modelo aplicó el criterio de intención principal de forma idéntica en las cuatro
+corridas de prueba.
 
 ---
 

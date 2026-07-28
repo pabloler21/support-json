@@ -686,7 +686,7 @@ motivos: consistencia voseo/tuteo y corrección del modo verbal.
 
 ### Pendientes
 
-- [ ] **C4: hacer que la regla de precedencia llegue.** Hipótesis a probar: agregar un
+- [x] **C4: hacer que la regla de precedencia llegue.** Hipótesis a probar: agregar un
       quinto ejemplo few-shot con una consulta de dos categorías, en lugar de reforzar
       la regla en prosa.
 - [ ] C2: revisar por qué elige `escalate_to_supervisor` sobre
@@ -694,4 +694,160 @@ motivos: consistencia voseo/tuteo y corrección del modo verbal.
 - [ ] Fijar el registro en `RESTRICCIONES` (voseo e imperativo).
 - [ ] Bajar `TEMPERATURE`.
 - [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (457 tokens de
+      diferencia).
+
+---
+
+## Iteración 7 — 2026-07-28 — La regla de precedencia se descarta y se reemplaza
+
+Esta iteración documenta un ciclo completo: una hipótesis, un intento fallido, el
+diagnóstico de la causa, y un cambio de diseño con su validación.
+
+### Intento: quinto ejemplo few-shot
+
+**Hipótesis de la iteración 6:** la regla de precedencia estaba enunciada en prosa pero
+ningún ejemplo la demostraba. La iteración 4 había mostrado que el modelo aprende más de
+los ejemplos que de las instrucciones, así que un ejemplo debería hacerla llegar.
+
+**Cambio:** un quinto ejemplo con una consulta de dos categorías — el botón de pago se
+cuelga, el cliente reintenta, aparecen dos cobros. Es `technical` y `billing` a la vez;
+por la regla vieja gana `billing`.
+
+Se eligió el par `billing`/`technical` **a propósito**, distinto del par de C4
+(`billing`/`account`). Con el mismo par, un resultado favorable no habría probado que el
+modelo aplica la regla, solo que memorizó el caso.
+
+**Costo:** +129 tokens (1246 → 1375).
+
+**Resultado: negativo. `account` en 4 de 4.** Control `tokens_prompt = 1409` en todas,
+o sea que el ejemplo estaba cargado.
+
+### Diagnóstico: la regla nunca llegaba a dispararse
+
+Los `answer` de las cuatro corridas describen el flujo como *"dar de baja la cuenta"* y
+luego *"revisá **si corresponde** el reembolso"*: tratan el reintegro como condicional y
+secundario.
+
+**El modelo no percibía C4 como una consulta de dos categorías.** Veía un pedido de baja
+con una pregunta de facturación adentro. Y la regla estaba redactada como *"si la
+consulta encaja en más de una categoría..."*, de modo que si el solapamiento no se
+reconoce, la condición nunca se cumple.
+
+Eso explica por qué el ejemplo no ayudó: enseñaba **qué hacer una vez identificadas dos
+categorías**, no **cómo identificarlas**.
+
+### La segunda explicación: la regla estaba mal
+
+Revisada la justificación original —*"`billing` va primero porque involucra dinero"*—
+no se sostiene. Que un caso involucre dinero no lo convierte en su eje. Una solicitud de
+baja es un evento de cancelación y corresponde al equipo de cuentas; el reembolso es una
+consecuencia.
+
+**Riesgo de método reconocido explícitamente antes de decidir.** Ya se había corregido
+la expectativa de C3 en la iteración 6 alegando un error del contrato. Corregir también
+la de C4 instalaría un patrón donde cada test que falla se reinterpreta como error de
+especificación, y con esa lógica **ningún test falla nunca y los tests dejan de servir**.
+
+Para evitarlo, la decisión se tomó respondiendo una pregunta de dominio **sin mirar la
+salida del modelo**:
+
+> ¿A qué equipo derivaría un responsable de soporte una solicitud de baja con reintegro?
+
+La respuesta —cuentas o retención, con el reembolso como tarea derivada— es independiente
+de lo que el sistema hubiera devuelto. Esa independencia es lo que hace legítima la
+corrección.
+
+### Cambio de diseño
+
+La regla de precedencia con orden fijo se reemplazó por una **regla de intención
+principal**: cuando una consulta toca más de una categoría, se clasifica por lo que el
+cliente quiere resolver, no por todo lo que la consulta menciona. Lo secundario se
+atiende en `answer` y en `actions`.
+
+Aplicado en `contrato_json.md`, `main_prompt.md` y `zero_shot_prompt.md`. Costo: +16
+tokens en ambos prompts, de modo que la diferencia entre ellos sigue siendo exactamente
+los 5 ejemplos (586 tokens).
+
+**El motivo original de la regla vieja era evitar que un criterio subjetivo produjera
+clasificaciones distintas en cada ejecución. Ese riesgo nunca se materializó:** el modelo
+aplicó intención principal de forma idéntica en las cuatro corridas del intento fallido.
+
+**El quinto ejemplo se conserva.** Bajo la regla nueva sigue siendo correcto: en ese caso
+el cliente reclama por el cobro duplicado —esa es su intención— y el botón colgado es la
+causa. Pasó de demostrar la regla vieja a demostrar la nueva sin cambiar una palabra.
+
+### La expectativa de C4 se endureció, no se relajó
+
+Cambiar el `category` esperado de `billing` a `account` habría dejado un test que solo
+confirma lo que el sistema ya hacía. Para evitarlo se agregó una condición de fallo:
+
+> Si devuelve `account` **sin** `issue_refund_request`, es un fallo.
+
+Ahora C4 no verifica qué categoría elige, sino algo más exigente: **que subordine la
+dimensión secundaria en vez de perderla.**
+
+### Validación
+
+**C1, control de regresión** (el prompt había crecido y el quinto ejemplo es `billing`):
+2 corridas, `technical` y `open_ticket` en ambas, confianza 0,80-0,85. Sin contaminación.
+
+**C4 con la regla nueva:** control `tokens_prompt = 1425` en las tres.
+
+| Corrida | `category` | `confidence` | `actions` |
+|---|---|---|---|
+| 1 | `account` | 0,85 | `verify_identity`, `issue_refund_request` |
+| 2 | `account` | 0,75 | `verify_identity`, `issue_refund_request` |
+| 3 | `account` | 0,85 | `verify_identity`, `issue_refund_request` |
+
+**Pasa 3 de 3 con el criterio estricto.** La dimensión de facturación aparece en
+`actions` en todas: se subordinó, no se perdió.
+
+### Corrección: los dos regímenes de latencia eran una lectura de muestra chica
+
+Las iteraciones 3, 5 y 6 describieron dos regímenes separados, y la 6 llegó a afirmar
+que las primeras llamadas *"no solo son más lentas, son impredecibles"*. Con n=24 esa
+caracterización **no se sostiene**:
+
+| | n | min | max | mediana |
+|---|---|---|---|---|
+| Primera de la tanda | 7 | 2811 | 23703 | 3374 |
+| Consecutivas | 17 | 1695 | 4172 | 2410 |
+
+**Cinco de las siete "frías" caen dentro del rango de las "tibias".** El rango de las
+consecutivas se ensanchó de 873 ms a 2477 ms al sumar muestras.
+
+Lo que sí se sostiene, y es lo que puede afirmarse en el informe:
+
+- Las medianas difieren (3374 contra 2410 ms).
+- **Los valores extremos (23703 y 10518 ms) aparecen exclusivamente en primeras
+  llamadas.**
+- Los grupos se superponen sustancialmente: no son dos poblaciones separadas.
+
+Sobre las 24 mediciones: **mediana 2486 ms, p25 2281, p75 3335.** Esos son los números
+para el informe, con la aclaración de que existen outliers de hasta 24 segundos.
+
+Es la segunda vez en el proyecto que una conclusión sobre latencia se corrige al sumar
+muestras. Refuerza la regla: **no concluir sobre tiempos con muestras chicas.**
+
+### Estado de las 5 consultas
+
+| | Veredicto |
+|---|---|
+| C1 | pasa |
+| C2 | **falla en `actions`** |
+| C3 | pasa (expectativa corregida en la iteración 6) |
+| C4 | pasa (expectativa corregida acá, con condición de fallo más estricta) |
+| C5 | pasa completo |
+
+### Pendientes
+
+- [ ] C2: el `answer` reconoce que falta información pero emite
+      `escalate_to_supervisor` en lugar de `request_more_information`. Único fallo
+      abierto del conjunto.
+- [ ] Fijar el registro en `RESTRICCIONES`. En estas corridas se repite la mezcla
+      voseo/tuteo (1 de 3 en tuteo).
+- [ ] Alucinación blanda: *"revisá las políticas de reembolso"* aparece de nuevo. Cuarta
+      aparición del patrón de presuponer documentos y áreas que el modelo no conoce.
+- [ ] Bajar `TEMPERATURE`, ahora que los cambios de prompt están cerrados.
+- [ ] Comparar few-shot contra zero-shot sobre las 5 consultas (586 tokens de
       diferencia).

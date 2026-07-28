@@ -16,7 +16,7 @@ account: acceso y datos de una cuenta puntual: login, contraseña, datos persona
 other: no encaja en ninguna de las anteriores.
 
 Si el problema afecta el acceso o los datos de una cuenta puntual, es account. Si es una falla del producto que le pasaría a cualquier usuario, es technical.
-Si la consulta encaja en más de una categoría, elegí la primera que corresponda en este orden: billing, account, technical, other.
+Si la consulta toca más de una categoría, clasificá por lo que el cliente quiere resolver, no por todo lo que la consulta menciona. Lo secundario se atiende en answer y en actions, sin cambiar la categoría.
 
 ACCIONES
 request_more_information: falta información para resolver y hay que pedírsela al cliente.

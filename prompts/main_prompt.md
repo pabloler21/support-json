@@ -16,7 +16,7 @@ account: acceso y datos de una cuenta puntual: login, contraseña, datos persona
 other: no encaja en ninguna de las anteriores.
 
 Si el problema afecta el acceso o los datos de una cuenta puntual, es account. Si es una falla del producto que le pasaría a cualquier usuario, es technical.
-Si la consulta encaja en más de una categoría, elegí la primera que corresponda en este orden: billing, account, technical, other.
+Si la consulta toca más de una categoría, clasificá por lo que el cliente quiere resolver, no por todo lo que la consulta menciona. Lo secundario se atiende en answer y en actions, sin cambiar la categoría.
 
 ACCIONES
 request_more_information: falta información para resolver y hay que pedírsela al cliente.
@@ -54,6 +54,9 @@ Salida: {"category": "technical", "answer": "La consulta no indica qué falla ni
 
 Consulta: Un cliente reporta que al subir un archivo de más de 10 MB recibe el error "upload failed", de forma consistente y en dos navegadores distintos.
 Salida: {"category": "technical", "answer": "El caso ya está acotado: falla por encima de un tamaño determinado y se reproduce en dos navegadores, lo que descarta una configuración local del cliente. Abrí un ticket con el tamaño exacto del archivo, su formato y la hora del último intento. Confirmale al cliente que el reporte quedó registrado, sin comprometer un plazo de resolución.", "confidence": 0.8, "actions": ["open_ticket"]}
+
+Consulta: Un cliente dice que el botón de pago se quedó cargando, volvió a intentarlo y ahora ve dos cobros en su resumen.
+Salida: {"category": "billing", "answer": "El caso combina una falla al procesar el pago y un cobro duplicado. Verificá la identidad del cliente, confirmá que ambos cargos correspondan al mismo concepto e importe, e iniciá la devolución del segundo. Dejá registrado aparte el comportamiento del botón para que quede el antecedente técnico.", "confidence": 0.8, "actions": ["verify_identity", "issue_refund_request", "open_ticket"]}
 
 Consulta: Un cliente escribe para avisar que ya resolvió por su cuenta el problema que había reportado y agradece la ayuda.
 Salida: {"category": "other", "answer": "No hay una gestión pendiente. Respondé confirmando la recepción del mensaje y dejá constancia en el caso de que el cliente lo dio por resuelto. Si el caso tenía un seguimiento abierto, cerralo según el procedimiento habitual.", "confidence": 0.9, "actions": []}

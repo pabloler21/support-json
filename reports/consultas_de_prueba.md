@@ -77,18 +77,31 @@ contactos: el modelo no tiene esa información.
 
 > Un cliente quiere dar de baja su cuenta y que le reintegren la parte del mes que no usó.
 
-**Qué prueba:** la regla de precedencia `billing > account > technical > other`. La
-consulta es genuinamente de `account` (baja de cuenta) y de `billing` (reintegro), y la
-regla obliga a elegir `billing`.
+**Qué prueba:** la regla de intención principal. La consulta toca `account` (baja de
+cuenta) y `billing` (reintegro), y la regla obliga a clasificar por lo que el cliente
+pide: la baja.
 
 | Campo | Esperado |
 |---|---|
-| `category` | **`billing`** — es lo que se está probando |
+| `category` | **`account`** — es lo que se está probando |
 | `confidence` | 0.50 – 1.00 |
 | `actions` | debe incluir `issue_refund_request`; `verify_identity` es aceptable |
 
-Si devuelve `account`, la regla de precedencia no está llegando al modelo y hay que
-reformularla en el prompt.
+La dimensión de facturación tiene que seguir apareciendo en `actions`: si devuelve
+`account` **sin** `issue_refund_request`, el modelo perdió el reintegro en vez de
+subordinarlo, y eso sí sería un fallo.
+
+> **Expectativa corregida.** Originalmente pedía `billing`, por una regla de precedencia
+> con orden fijo que el contrato ya no tiene. Esa regla se descartó tras dos intentos
+> fallidos de hacerla llegar al modelo y tras revisar que su justificación era débil
+> (ver `contrato_json.md`, sección 3).
+>
+> **Es la segunda expectativa que se corrige, y eso merece una aclaración**, porque un
+> criterio que se ajusta cada vez que un test falla deja de ser un criterio. La decisión
+> se tomó respondiendo una pregunta de dominio, sin mirar la salida del modelo: *¿a qué
+> equipo derivaría un responsable de soporte una solicitud de baja con reintegro?* La
+> respuesta —cuentas o retención, con el reembolso como tarea derivada— es independiente
+> de lo que el sistema haya devuelto.
 
 ---
 
