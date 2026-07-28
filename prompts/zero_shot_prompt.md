@@ -27,6 +27,8 @@ send_help_article: existe documentación pública que resuelve la consulta.
 issue_refund_request: corresponde iniciar el trámite de devolución.
 
 Si ninguna acción aplica, devolvé una lista vacía.
+Si aplica más de una, incluilas todas en el orden en que el agente debe ejecutarlas.
+Si la consulta describe una falla del producto que se puede reproducir, corresponde open_ticket aunque además falte información: en ese caso van las dos acciones.
 
 CONFIANZA
 confidence indica cuán confiable es el contenido de answer para el caso concreto. No mide la calidad de la redacción ni la certeza de la clasificación.

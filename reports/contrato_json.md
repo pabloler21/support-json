@@ -105,6 +105,29 @@ El tope de 3 elementos es deliberado. Sin tope, el modelo tiende a devolver toda
 acciones aplicables "por las dudas", y una recomendación que siempre incluye todo no
 recomienda nada.
 
+### La lista está ordenada
+
+Cuando aplica más de una acción, el orden es el de ejecución sugerida para el agente.
+En el ejemplo canónico de la sección 1, `verify_identity` va antes que
+`issue_refund_request` porque la identidad se confirma antes de mover dinero.
+
+### Regla de desambiguación
+
+A diferencia de `category`, las acciones no son mutuamente excluyentes: varias pueden
+aplicar a la vez y se incluyen todas. Pero hay un solapamiento que sí produce
+resultados inconsistentes si no se resuelve.
+
+`request_more_information` y `open_ticket` se cumplen los dos al mismo tiempo en
+cualquier reporte de falla al que le falten datos del entorno: falta información **y**
+el caso no se resuelve en la interacción. Sin una regla, el modelo elige uno u otro
+según la ejecución, y la misma consulta produce acciones distintas cada vez.
+
+> Si la consulta describe una falla del producto que se puede reproducir, corresponde
+> `open_ticket` aunque además falte información. En ese caso van las dos.
+
+El criterio es que un reporte reproducible merece quedar registrado de inmediato: pedir
+los datos del entorno es un paso adicional, no un motivo para postergar el ticket.
+
 ---
 
 ## 5. Semántica de `confidence`

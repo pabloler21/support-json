@@ -27,6 +27,8 @@ send_help_article: existe documentación pública que resuelve la consulta.
 issue_refund_request: corresponde iniciar el trámite de devolución.
 
 Si ninguna acción aplica, devolvé una lista vacía.
+Si aplica más de una, incluilas todas en el orden en que el agente debe ejecutarlas.
+Si la consulta describe una falla del producto que se puede reproducir, corresponde open_ticket aunque además falte información: en ese caso van las dos acciones.
 
 CONFIANZA
 confidence indica cuán confiable es el contenido de answer para el caso concreto. No mide la calidad de la redacción ni la certeza de la clasificación.
@@ -49,6 +51,9 @@ Salida: {"category": "billing", "answer": "Confirmá primero la identidad del cl
 
 Consulta: Un cliente dice que la aplicación no le funciona.
 Salida: {"category": "technical", "answer": "La consulta no indica qué falla ni en qué contexto ocurre. Pedile el mensaje de error exacto, el dispositivo y la versión de la aplicación que usa, y desde cuándo lo observa. Sin esos datos no se puede distinguir entre una falla de la aplicación, un problema de conectividad y un error de configuración.", "confidence": 0.3, "actions": ["request_more_information"]}
+
+Consulta: Un cliente reporta que al subir un archivo de más de 10 MB recibe el error "upload failed", de forma consistente y en dos navegadores distintos.
+Salida: {"category": "technical", "answer": "El caso ya está acotado: falla por encima de un tamaño determinado y se reproduce en dos navegadores, lo que descarta una configuración local del cliente. Abrí un ticket con el tamaño exacto del archivo, su formato y la hora del último intento. Confirmale al cliente que el reporte quedó registrado, sin comprometer un plazo de resolución.", "confidence": 0.8, "actions": ["open_ticket"]}
 
 Consulta: Un cliente escribe para avisar que ya resolvió por su cuenta el problema que había reportado y agradece la ayuda.
 Salida: {"category": "other", "answer": "No hay una gestión pendiente. Respondé confirmando la recepción del mensaje y dejá constancia en el caso de que el cliente lo dio por resuelto. Si el caso tenía un seguimiento abierto, cerralo según el procedimiento habitual.", "confidence": 0.9, "actions": []}
