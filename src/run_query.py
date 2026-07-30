@@ -24,7 +24,7 @@ import sys
 from src.json_validator import ContractViolationError, validate_response
 from src.metrics import estimate_cost, log_metrics
 from src.openai_client import create_chat_completion
-from src.prompt_builder import build_messages
+from src.prompt_builder import DEFAULT_TEMPLATE, build_messages
 from src.safety import blocked_response, check_query, log_safety_decision
 
 
@@ -36,6 +36,17 @@ def main():
         epilog="The JSON goes to stdout; token usage, latency and cost go to stderr.",
     )
     parser.add_argument("query", help="The support query to answer.")
+    # The default is imported rather than repeated, so the two files cannot
+    # disagree about which template is the standard one.
+    parser.add_argument(
+        "--template",
+        default=DEFAULT_TEMPLATE,
+        help=(
+            "Prompt template to use, from prompts/. Defaults to "
+            f"{DEFAULT_TEMPLATE}. Exists so the few-shot versus zero-shot "
+            "comparison in the report can be reproduced."
+        ),
+    )
     args = parser.parse_args()
 
     # Ahead of build_messages, because the whole point of blocking is to not
@@ -58,7 +69,14 @@ def main():
         )
         return
 
-    messages = build_messages(args.query)
+    try:
+        messages = build_messages(args.query, args.template)
+    except FileNotFoundError as error:
+        # A misspelled template name is a configuration problem, which is what
+        # exit code 1 already means.
+        print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         result = create_chat_completion(messages)
     except RuntimeError as error:
@@ -74,6 +92,7 @@ def main():
         result.tokens_completion,
         result.total_tokens,
         result.latency_ms,
+        args.template,
     )
 
     try:

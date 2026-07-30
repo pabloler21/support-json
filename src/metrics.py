@@ -23,7 +23,10 @@ METRICS_PATH = Path(__file__).resolve().parent.parent / "metrics" / "metrics.csv
 
 # Single source of truth for the header and for the order of every row, so the
 # two can never drift apart. The first six names and their order come from the
-# assignment; the last two are the breakdown this project chose to add.
+# assignment, which defines them as the minimum; the rest this project added.
+# input_cost_usd and output_cost_usd break the price down, and template records
+# which prompt produced the row, without which the few-shot versus zero-shot
+# runs would sit in the file unattributable.
 COLUMNS = (
     "timestamp",
     "tokens_prompt",
@@ -33,6 +36,7 @@ COLUMNS = (
     "estimated_cost_usd",
     "input_cost_usd",
     "output_cost_usd",
+    "template",
 )
 
 # Enough decimals to keep a single query visible. One costs about $0.00026, and
@@ -103,6 +107,7 @@ def log_metrics(
     tokens_completion: int,
     total_tokens: int,
     latency_ms: int,
+    template: str,
 ) -> None:
     """Append one run to metrics/metrics.csv, writing the header if it is new.
 
@@ -115,6 +120,8 @@ def log_metrics(
         tokens_completion: Tokens generated, as reported by the API.
         total_tokens: The API's own total, stored rather than recomputed.
         latency_ms: Wall-clock duration of the call.
+        template: Which prompt file produced the run. Two prompts writing
+            indistinguishable rows would make the comparison unauditable.
     """
     cost = estimate_cost(tokens_prompt, tokens_completion)
     row = (
@@ -126,6 +133,7 @@ def log_metrics(
         COST_FORMAT.format(cost.total_usd),
         COST_FORMAT.format(cost.input_usd),
         COST_FORMAT.format(cost.output_usd),
+        template,
     )
 
     append_row(METRICS_PATH, COLUMNS, row)

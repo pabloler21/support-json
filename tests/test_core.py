@@ -195,8 +195,8 @@ def csv_path(tmp_path, monkeypatch):
 
 
 def test_the_header_is_written_once(csv_path):
-    log_metrics(1484, 95, 1579, 3606)
-    log_metrics(1400, 90, 1490, 2100)
+    log_metrics(1484, 95, 1579, 3606, "main_prompt.md")
+    log_metrics(1400, 90, 1490, 2100, "main_prompt.md")
 
     rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
 
@@ -205,7 +205,7 @@ def test_the_header_is_written_once(csv_path):
 
 
 def test_the_row_records_what_it_was_given(csv_path):
-    log_metrics(1484, 95, 1579, 3606)
+    log_metrics(1484, 95, 1579, 3606, "main_prompt.md")
 
     row = next(csv.DictReader(csv_path.open(encoding="utf-8")))
 
@@ -218,8 +218,35 @@ def test_the_row_records_what_it_was_given(csv_path):
     )
 
 
+def test_the_six_required_columns_come_first_and_in_order():
+    """The assignment names these six and their order; the rest are additions
+    it allows, since it defines the six as the minimum."""
+    assert COLUMNS[:6] == (
+        "timestamp",
+        "tokens_prompt",
+        "tokens_completion",
+        "total_tokens",
+        "latency_ms",
+        "estimated_cost_usd",
+    )
+
+
+def test_the_row_records_which_template_produced_it(csv_path):
+    """Without this column the few-shot and zero-shot runs would sit in the
+    file indistinguishable, and the comparison could not be audited from it."""
+    log_metrics(1484, 95, 1579, 3606, "main_prompt.md")
+    log_metrics(898, 95, 993, 3100, "zero_shot_prompt.md")
+
+    rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+
+    assert [row["template"] for row in rows] == [
+        "main_prompt.md",
+        "zero_shot_prompt.md",
+    ]
+
+
 def test_the_timestamp_is_utc(csv_path):
-    log_metrics(1, 1, 2, 3)
+    log_metrics(1, 1, 2, 3, "main_prompt.md")
 
     row = next(csv.DictReader(csv_path.open(encoding="utf-8")))
 
@@ -228,8 +255,8 @@ def test_the_timestamp_is_utc(csv_path):
 
 def test_rows_are_not_separated_by_blank_lines(csv_path):
     """csv.writer emits \\r\\n itself; without newline="" it would become \\r\\r\\n."""
-    log_metrics(1, 1, 2, 3)
-    log_metrics(1, 1, 2, 3)
+    log_metrics(1, 1, 2, 3, "main_prompt.md")
+    log_metrics(1, 1, 2, 3, "main_prompt.md")
 
     assert b"\r\r\n" not in csv_path.read_bytes()
 

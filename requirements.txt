@@ -10,6 +10,9 @@ certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
+    #   requests
+charset-normalizer==3.4.9
+    # via requests
 colorama==0.4.6 ; sys_platform == 'win32'
     # via
     #   pytest
@@ -26,6 +29,7 @@ idna==3.18
     # via
     #   anyio
     #   httpx
+    #   requests
 iniconfig==2.3.0
     # via pytest
 jiter==0.16.0
@@ -37,7 +41,9 @@ packaging==26.2
 pluggy==1.6.0
     # via pytest
 pydantic==2.13.4
-    # via openai
+    # via
+    #   openai
+    #   support-json
 pydantic-core==2.46.4
     # via pydantic
 pygments==2.20.0
@@ -45,8 +51,15 @@ pygments==2.20.0
 pytest==9.1.1
 python-dotenv==1.2.2
     # via support-json
+regex==2026.7.19
+    # via tiktoken
+requests==2.34.2
+    # via tiktoken
+ruff==0.16.0
 sniffio==1.3.1
     # via openai
+tiktoken==0.13.0
+    # via support-json
 tqdm==4.70.0
     # via openai
 typing-extensions==4.16.0
@@ -58,3 +71,5 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via pydantic
+urllib3==2.7.0
+    # via requests
