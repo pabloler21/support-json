@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Contexto del proyecto para retomar el trabajo en una sesión nueva. Última
-actualización: 2026-07-28.
+actualización: 2026-07-30.
 
 ---
 
@@ -38,8 +38,13 @@ timestamp, tokens_prompt, tokens_completion, total_tokens, latency_ms, estimated
 ⚠️ La API de OpenAI devuelve `prompt_tokens` / `completion_tokens` — **orden invertido**.
 El mapeo ya está hecho en `openai_client.py`, en el dataclass `CompletionResult`.
 
-Se decidió agregar dos columnas extra al final (`input_cost_usd`, `output_cost_usd`).
-El enunciado lista las 6 como *"contenido mínimo"*, así que agregar está permitido.
+Se agregaron tres columnas al final: `input_cost_usd`, `output_cost_usd` y
+`template`. El enunciado lista las 6 como *"contenido mínimo"*, así que agregar está
+permitido, y un test fija que las seis originales sigan primero y en orden.
+
+⚠️ **`template` no es cosmética.** Sin ella, las corridas de few-shot y zero-shot
+quedan indistinguibles en el CSV y el experimento no se puede auditar desde el archivo
+que el informe cita.
 
 ---
 
@@ -50,18 +55,18 @@ El enunciado lista las 6 como *"contenido mínimo"*, así que agregar está perm
 | `src/config.py` | ✅ Variables de entorno y precios |
 | `src/prompt_builder.py` | ✅ Carga plantilla y arma `messages` |
 | `src/openai_client.py` | ✅ Llamada + `usage` + latencia + JSON mode |
-| `src/run_query.py` | ✅ CLI mínimo (falta integrar validator, metrics, safety) |
-| `src/json_validator.py` | ⬜ Vacío |
-| `src/metrics.py` | ⬜ Vacío |
-| `src/safety.py` | ⬜ Vacío |
-| `src/token_estimator.py` | ⬜ No existe |
-| `tests/test_core.py` | ⬜ No existe |
-| `README.md` | ⬜ Vacío |
-| `reports/PI_report_en.md` | ⬜ No existe |
-| `metrics/metrics.csv` | ⬜ No existe |
+| `src/run_query.py` | ✅ Integrado, con flag `--template` |
+| `src/json_validator.py` | ✅ Contrato con pydantic |
+| `src/metrics.py` | ✅ Costo, CSV y `append_row` compartido |
+| `src/safety.py` | ✅ Capas 1 y 2, log aparte |
+| `src/token_estimator.py` | ✅ tiktoken, 7/7 exacto contra `usage` |
+| `tests/test_core.py` | ✅ 61 tests, todos offline |
+| `README.md` | ✅ |
+| `reports/PI_report_en.md` | ✅ Y `PI_report_es.md` |
+| `metrics/metrics.csv` | ✅ 27 filas reales, con columna `template` |
 
-**Fase:** el flujo principal corre de punta a punta hasta imprimir el JSON. Falta
-validación, métricas persistidas, seguridad, tests y documentación.
+**Fase: el código y la documentación están completos.** Diez iteraciones registradas,
+61 tests offline en verde, y el experimento few-shot vs zero-shot corrido.
 
 ### Números de referencia
 
@@ -69,9 +74,9 @@ validación, métricas persistidas, seguridad, tests y documentación.
 |---|---|
 | Modelo | `gpt-4o-mini` |
 | Precios | $0,15 / 1M input, $0,60 / 1M output |
-| System prompt few-shot | 1446 tokens (era 1391 antes de la iter. 9) |
-| System prompt zero-shot | 860 tokens (era 805 antes de la iter. 9) |
-| Los 5 ejemplos cuestan | **586 tokens** |
+| System prompt few-shot | 1446 tokens (medido con tiktoken) |
+| System prompt zero-shot | 860 tokens (medido) |
+| Los 5 ejemplos cuestan | **586 tokens**, y **+51,3% de costo total** por consulta |
 | Costo por consulta | ~$0,00026 |
 | Latencia | mediana 2486 ms (n=24), p25 2281, p75 3335 |
 | Latencia, outliers | 10518 y 23703 ms, ambos en primera llamada de una tanda |
@@ -132,12 +137,16 @@ token_estimator.py ─────────► config.py
 - **`json_validator.py` va con pydantic** (decisión del usuario). Declararlo
   explícitamente en `pyproject.toml`, no usarlo como dependencia transitiva de `openai`.
 - **tiktoken NO alimenta el CSV.** Los tokens del CSV salen de `response.usage`, que es
-  exacto. tiktoken sirve para estimar prompts sin gastar llamadas y para tests offline.
-  Medido: tiktoken erra 0,18% contra `usage`.
-- **Técnica de prompting: few-shot.** El problema es conformidad de esquema, no
-  dificultad de razonamiento. CoT infla costo y latencia (las dos métricas que el
-  proyecto mide); self-consistency multiplica el costo y no tiene función de agregación
-  sensata para texto libre.
+  lo que se factura. tiktoken sirve para estimar prompts sin gastar llamadas y para
+  tests offline. **Medido: exacto en 7 de 7** contra `usage`, usando la fórmula que
+  incluye los nombres de rol. (El 0,18% que decía esta nota antes era de una medición
+  que contaba solo el texto del prompt; con la petición completa el error es cero.)
+- **Técnica de prompting: few-shot.** ⚠️ **La justificación cambió con la iteración
+  10.** Se eligió argumentando conformidad de esquema; el experimento mostró que eso lo
+  garantiza `response_format={"type": "json_object"}` a nivel de API (30 de 30 válidas
+  en las dos ramas). **Lo que los ejemplos compran es la calibración de `confidence`**:
+  el zero-shot devuelve 0.5 en C2, el punto medio, contra 0,20 del few-shot. Cuesta
+  +51,3% por consulta. CoT y self-consistency siguen descartadas por costo y latencia.
 
 ---
 
@@ -145,8 +154,10 @@ token_estimator.py ─────────► config.py
 
 - **Identificadores y código en inglés; cada documento en el idioma de su lector.**
   Enums, nombres de funciones, comentarios, docstrings y mensajes de commit: inglés.
-  `answer`, contrato, bitácora, prompts y README: español. El informe va en inglés
-  (por el `_en` del nombre, que es una inferencia — conviene confirmarla).
+  `answer`, contrato, bitácora, prompts y README: español. **El informe va en los dos
+  idiomas** (decisión del usuario): `PI_report_en.md` y `PI_report_es.md`, que deben
+  mantenerse sincronizados. Todos sus números salen de `metrics.csv` y de
+  `iteraciones.md`, nunca transcriptos de un informe al otro.
 - **El prompt está en español** deliberadamente: el `answer` sale en español y un prompt
   en español reduce el riesgo de que se filtre inglés en la salida. Cuesta ~15% más
   tokens; es despreciable.
@@ -162,7 +173,8 @@ token_estimator.py ─────────► config.py
 |---|---|
 | `reports/contrato_json.md` | El contrato JSON completo: campos, tipos, vocabularios, reglas de desambiguación, casos de prueba. **Es la fuente del prompt, del validator y de los tests.** |
 | `reports/consultas_de_prueba.md` | Las 5 consultas fijas (C1-C5) con su resultado esperado escrito **antes** de correr. |
-| `reports/iteraciones.md` | La bitácora. 6 iteraciones documentadas con mediciones, hipótesis, fallos y decisiones. Es la fuente de la sección de prompting del informe. |
+| `reports/iteraciones.md` | La bitácora. **10 iteraciones** con mediciones, hipótesis que se cayeron y decisiones. Es la fuente de la sección de prompting del informe. |
+| `reports/uso_de_ia.md` | Cómo se usaron herramientas de IA y cómo influyeron en las decisiones técnicas. Incluye las 7 afirmaciones del asistente que las mediciones desmintieron. |
 
 ⚠️ **Limitación conocida y asumida:** los vocabularios están duplicados entre el prompt
 (`.md`) y el contrato. Si se edita uno hay que editar el otro. Mejora futura: generar
@@ -283,36 +295,26 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 ### Fases que faltan
 
-- [ ] `src/json_validator.py` con pydantic. Contrato en `contrato_json.md` sección 2.
-- [ ] `src/metrics.py`: `estimate_cost()` (aritmética pura) + `log_metrics()` (CSV).
-      Trampas: `newline=""` al abrir el CSV en Windows, header solo si el archivo no
-      existe, timestamp ISO 8601 UTC, y **no redondear el costo a 2 decimales** (una
-      consulta cuesta $0,00026, a 2 decimales queda en 0,00).
-- [ ] `src/token_estimator.py` con tiktoken.
-- [ ] Integrar validator y metrics en `run_query.py`.
-- [ ] `src/safety.py`: dos capas. Heurísticas locales de inyección **y**
-      `client.moderations.create` (modelo `omni-moderation-latest`). Cubren amenazas
-      **disjuntas**: la moderación no detecta prompt injection. Loguear las decisiones
-      en un archivo aparte, no en `metrics.csv`. Una consulta bloqueada devuelve **el
-      mismo contrato** (ver contrato sección 6).
-- [ ] `tests/test_core.py`. Casos en `contrato_json.md` sección 8.
-- [ ] `README.md` y `reports/PI_report_en.md`.
-- [ ] Commitear `metrics/metrics.csv` con al menos una corrida real (ítem del checklist
-      de entrega).
+**Ninguna. Todos los entregables están escritos.** Lo que queda son mejoras
+opcionales, listadas abajo.
 
-### Decisiones abiertas
+### Limitaciones abiertas, medidas y asumidas
 
-- [ ] **Fijar el registro en `RESTRICCIONES`.** El modelo alterna voseo y tuteo, y una
-      vez devolvió *"verifiqué"* (pasado, primera persona) donde correspondía *"verificá"*
-      — eso cambia el significado.
-- [ ] **Alucinación blanda — 6 apariciones, ya es sistemático.** El modelo referencia
-      información que no tiene ("departamento de recursos humanos", "las políticas de
-      reembolso"). No inventa datos duros, pero presupone documentos y áreas. Va al
-      informe como limitación, y con 6 casos merece **sección propia**, no una línea.
-- [ ] Comparar few-shot vs zero-shot sobre las 5 consultas (586 tokens de diferencia).
-      **Correr esto después de arreglar C2**, porque ese arreglo toca el prompt y la
-      comparación tiene que medir la versión definitiva.
-- [ ] Documentar el uso de IA en el desarrollo — lo pide el enunciado.
+Ninguna bloquea la entrega. Todas están documentadas en el README y en el informe.
+
+- **C2, fallo parcial: 5 de 7.** El `answer` reconoce que falta información y a veces
+      emite `escalate_to_supervisor` en vez de `request_more_information`. La regla de
+      la iteración 9 lo llevó de 0 de 4 a 3 de 4. Candidato de mejora: un sexto ejemplo
+      few-shot con el par `other` + consulta vaga.
+- **Registro y destinatario en `RESTRICCIONES`.** El modelo alterna voseo y tuteo, y
+      algunas respuestas están redactadas hacia el cliente final en lugar del agente,
+      que es lo que el prompt establece en su primera línea.
+- **Alucinación blanda — 7 apariciones.** Referencia información que no tiene
+      ("departamento de recursos humanos", "las políticas de reembolso"). No inventa
+      datos duros, pero presupone documentos y áreas.
+- **Vocabulario duplicado** entre el prompt y `json_validator.py`. Mejora futura:
+      generar esa sección del prompt desde las constantes de Python. Los `description=`
+      de los campos del modelo son la materia prima para eso.
 
 ---
 
