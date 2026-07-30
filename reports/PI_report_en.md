@@ -71,12 +71,16 @@ what OpenAI bills — never from an estimate, which is what makes costs auditabl
 `tiktoken` only sizes prompts without spending a call; its framing formula,
 including role names, matched `prompt_tokens` **exactly on 7 of 7** real calls.
 
-| | Committed `metrics.csv` | Exploratory phase |
+| | `metrics.csv`, rows with `source=cli` | Exploratory phase |
 |---|---|---|
-| n | 27 | 24 |
-| Cost per query, mean | $0.00022701 | — |
-| Latency, median | **1709 ms** (p25 1595, p75 2226) | 2486 ms (p25 2281, p75 3335) |
+| n | 29 | 24 |
+| Cost per query, mean | $0.00023058 | — |
+| Latency, median | **1709 ms** (p25 1595, p75 2225) | 2486 ms (p25 2281, p75 3335) |
 | Range | 1078 – 4411 ms | up to 23703 ms |
+
+The `source` column separates CLI runs from the ones the web interface
+produces, so these figures stay recomputable with a filter rather than needing
+a frozen file.
 
 **The two columns are different populations and only the first is auditable.**
 The exploratory figures were transcribed by hand from terminal output during

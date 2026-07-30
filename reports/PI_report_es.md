@@ -76,12 +76,16 @@ que hace auditables los costos. `tiktoken` solo se usa para medir prompts sin
 gastar llamadas; su fórmula de envoltura, incluidos los nombres de rol, coincidió
 con `prompt_tokens` **exacto en 7 de 7** llamadas reales.
 
-| | `metrics.csv` commiteado | Fase exploratoria |
+| | `metrics.csv`, filas con `source=cli` | Fase exploratoria |
 |---|---|---|
-| n | 27 | 24 |
-| Costo por consulta, media | $0,00022701 | — |
-| Latencia, mediana | **1709 ms** (p25 1595, p75 2226) | 2486 ms (p25 2281, p75 3335) |
+| n | 29 | 24 |
+| Costo por consulta, media | $0,00023058 | — |
+| Latencia, mediana | **1709 ms** (p25 1595, p75 2225) | 2486 ms (p25 2281, p75 3335) |
 | Rango | 1078 – 4411 ms | hasta 23703 ms |
+
+La columna `source` distingue las corridas de la CLI de las que produce la
+interfaz web, para que estos números se sigan recalculando con un filtro en vez
+de exigir un archivo congelado.
 
 **Son dos poblaciones distintas y solo la primera es auditable.** Los valores de
 la fase exploratoria se transcribieron a mano desde la terminal durante las

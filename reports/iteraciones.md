@@ -1371,3 +1371,54 @@ apareció igual — en el último paso, entre documentos que ya estaban escritos
 lección que agrega: **verificar la consistencia entre lo que un informe afirma y
 lo que su evidencia produce al recalcularla**, y no solo entre los documentos
 entre sí.
+
+---
+
+## Nota de trazabilidad — 2026-07-30, columna `source`
+
+Al agregar el endpoint HTTP, `metrics.csv` pasó a tener **dos entradas posibles**:
+la CLI y la API. Sin una columna que las distinga, las filas que producen las
+mediciones del informe y las que produce un evaluador probando la interfaz
+quedan **indistinguibles en el mismo archivo**, y los números publicados dejan de
+poder recalcularse.
+
+Es el mismo problema que ya había resuelto la columna `template` —sin ella, las
+corridas de few-shot y zero-shot eran inseparables— aplicado ahora a *quién
+llamó* en lugar de *con qué prompt*.
+
+### El backfill, y por qué no falsea nada
+
+Agregar una columna dejó el encabezado con 10 nombres sobre filas de 9 valores.
+Las filas previas se completaron con `cli`.
+
+**Esto es editar evidencia commiteada, así que la justificación queda escrita:**
+el valor no se inventa. Esas filas se produjeron por CLI porque la API no existía
+cuando se escribieron. **Ningún token, latencia ni costo se modificó** — solo se
+hizo explícito un dato que hasta entonces era implícito.
+
+### Los números cambiaron, y se corrigieron en los informes
+
+Las dos corridas de verificación de la no regresión de `run_query.py` son
+llamadas reales y quedaron registradas. Borrarlas para conservar el `n` del
+informe habría sido falsear el archivo, así que se recalculó:
+
+| | Antes | Ahora |
+|---|---|---|
+| n (`source=cli`) | 27 | **29** |
+| Latencia mediana | 1709 ms | **1709 ms** (sin cambio) |
+| p25 / p75 | 1595 / 2226 | **1595 / 2225** |
+| Costo medio | $0,00022701 | **$0,00023058** |
+
+### Lo que no cambió, y es lo importante
+
+Los números de la comparación few-shot contra zero-shot **se reproducen exactos**
+filtrando el barrido de la iteración 10 (`2026-07-30T19:00` y `19:01`):
+
+```
+main_prompt.md         n=12  media $0,00026706
+zero_shot_prompt.md    n=12  media $0,00017656
+delta                        +51,3%
+```
+
+Es decir: el hallazgo central del informe sigue siendo auditable desde el CSV
+después del cambio, que era la condición para hacerlo.
