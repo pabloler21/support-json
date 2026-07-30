@@ -76,18 +76,26 @@ que hace auditables los costos. `tiktoken` solo se usa para medir prompts sin
 gastar llamadas; su fórmula de envoltura, incluidos los nombres de rol, coincidió
 con `prompt_tokens` **exacto en 7 de 7** llamadas reales.
 
-| | |
-|---|---|
-| Costo por consulta | ~$0,00027 |
-| Latencia, mediana | 2486 ms (n=24; p25 2281, p75 3335) |
-| Outliers | 10518 y 23703 ms, ambos primera llamada de una tanda |
+| | `metrics.csv` commiteado | Fase exploratoria |
+|---|---|---|
+| n | 27 | 24 |
+| Costo por consulta, media | $0,00022701 | — |
+| Latencia, mediana | **1709 ms** (p25 1595, p75 2226) | 2486 ms (p25 2281, p75 3335) |
+| Rango | 1078 – 4411 ms | hasta 23703 ms |
 
-La latencia produjo dos afirmaciones que hubo que corregir. Una medición de
-23703 ms se reportó antes de repetirla; tres repeticiones dieron ~2100 ms.
+**Son dos poblaciones distintas y solo la primera es auditable.** Los valores de
+la fase exploratoria se transcribieron a mano desde la terminal durante las
+iteraciones 1 a 9, antes de que `metrics.py` existiera; se conservan en
+[`iteraciones.md`](iteraciones.md) porque las conclusiones que se sacaron de
+ellos forman parte del registro. Todo lo que reporta el CSV commiteado se puede
+recalcular desde el propio archivo, que es el estándar que sostiene el resto de
+este informe.
+
+La latencia produjo además dos afirmaciones que hubo que corregir. Una medición
+de 23703 ms se reportó antes de repetirla; tres repeticiones dieron ~2100 ms.
 Después se afirmó una separación limpia entre régimen frío y tibio, y se retiró:
-con n=24, cinco de siete llamadas frías caen dentro del rango de las tibias. Lo
-que sobrevive es que las medianas difieren y que los extremos aparecen solo en
-primeras llamadas.
+con n=24, cinco de siete llamadas frías caían dentro del rango de las tibias. Lo
+que sobrevive es que los valores extremos aparecen solo en primeras llamadas.
 
 ## 5. Few-shot contra zero-shot
 

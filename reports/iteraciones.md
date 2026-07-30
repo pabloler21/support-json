@@ -1338,3 +1338,36 @@ incertidumbre.
       iteración 9: **5 de 7**. Fallo parcial asumido.
 - [ ] Registro y destinatario en `RESTRICCIONES`.
 - [ ] Alucinación blanda: 7 apariciones.
+
+---
+
+## Nota de integridad — 2026-07-30
+
+Al revisar la consistencia entre documentos apareció una **discrepancia entre lo
+que los informes afirmaban y lo que la evidencia commiteada permite recalcular**.
+
+Los informes citaban *"latencia mediana 2486 ms (n=24)"* y señalaban a
+`metrics.csv` como la fuente auditable. Pero el CSV tiene **27 filas con mediana
+1709 ms**. Quien intentara verificar el número no lo habría obtenido.
+
+**La causa:** son dos poblaciones distintas.
+
+| | Origen | n | Mediana |
+|---|---|---|---|
+| Fase exploratoria | transcrita a mano de la terminal, iteraciones 1-9 | 24 | 2486 ms |
+| CSV commiteado | registrada por `metrics.py` | 27 | 1709 ms |
+
+Las mediciones de las iteraciones 1 a 9 se tomaron **antes de que `metrics.py`
+existiera**, copiando los números de stderr. Ese conjunto incluye además las
+llamadas exploratorias con los outliers de 10518 y 23703 ms, que las tandas
+posteriores no tienen.
+
+**Ninguna de las dos es falsa; el error fue presentarlas como una sola.** Los
+informes ahora muestran las dos columnas con su procedencia, y dicen
+explícitamente cuál es la auditable.
+
+Esto era exactamente lo que la disciplina de este proyecto se propuso evitar, y
+apareció igual — en el último paso, entre documentos que ya estaban escritos. La
+lección que agrega: **verificar la consistencia entre lo que un informe afirma y
+lo que su evidencia produce al recalcularla**, y no solo entre los documentos
+entre sí.

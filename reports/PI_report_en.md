@@ -71,17 +71,25 @@ what OpenAI bills — never from an estimate, which is what makes costs auditabl
 `tiktoken` only sizes prompts without spending a call; its framing formula,
 including role names, matched `prompt_tokens` **exactly on 7 of 7** real calls.
 
-| | |
-|---|---|
-| Cost per query | ~$0.00027 |
-| Latency, median | 2486 ms (n=24; p25 2281, p75 3335) |
-| Outliers | 10518 and 23703 ms, both first-of-batch |
+| | Committed `metrics.csv` | Exploratory phase |
+|---|---|---|
+| n | 27 | 24 |
+| Cost per query, mean | $0.00022701 | — |
+| Latency, median | **1709 ms** (p25 1595, p75 2226) | 2486 ms (p25 2281, p75 3335) |
+| Range | 1078 – 4411 ms | up to 23703 ms |
 
-Latency produced two corrected claims. A reading of 23703 ms was reported before
-being repeated; three reruns gave ~2100 ms. Later, a clean split into cold and
-warm regimes was asserted and withdrawn: at n=24, five of seven cold calls fall
-inside the warm range. What survives is that the medians differ and the extremes
-appear only in first calls.
+**The two columns are different populations and only the first is auditable.**
+The exploratory figures were transcribed by hand from terminal output during
+iterations 1 to 9, before `metrics.py` existed; they are preserved in
+[`iteraciones.md`](iteraciones.md) because the conclusions drawn from them are
+part of the record. Everything the committed CSV reports can be recomputed from
+the file itself, which is the standard the rest of this report holds to.
+
+Latency also produced two corrected claims. A reading of 23703 ms was reported
+before being repeated; three reruns gave ~2100 ms. Later, a clean split into cold
+and warm regimes was asserted and withdrawn: at n=24, five of seven cold calls
+fell inside the warm range. What survives is that the extreme values appear only
+in first-of-batch calls.
 
 ## 5. Few-shot versus zero-shot
 

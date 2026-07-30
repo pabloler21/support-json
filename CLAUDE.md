@@ -24,15 +24,17 @@ Los nombres vienen del enunciado y **no se negocian** — la rúbrica los busca 
 | Script ejecutable | `src/run_query.py` |
 | Plantilla de prompt | `prompts/main_prompt.md` |
 | Métricas por ejecución | `metrics/metrics.csv` |
-| Informe (1-2 páginas) | `reports/PI_report_en.md` |
+| Informe (1-2 páginas) | `reports/PI_report_en.md` **y** `reports/PI_report_es.md` |
 | README | `README.md` |
 | Test | `tests/test_core.py` |
 | Seguridad (bonus) | `src/safety.py` |
 
-**Columnas del CSV, en este orden y con estos nombres:**
+**Columnas del CSV.** Las seis primeras son las del enunciado, en ese orden y con
+esos nombres exactos; las tres últimas se agregaron:
 
 ```
-timestamp, tokens_prompt, tokens_completion, total_tokens, latency_ms, estimated_cost_usd
+timestamp, tokens_prompt, tokens_completion, total_tokens, latency_ms,
+estimated_cost_usd, input_cost_usd, output_cost_usd, template
 ```
 
 ⚠️ La API de OpenAI devuelve `prompt_tokens` / `completion_tokens` — **orden invertido**.
@@ -64,6 +66,9 @@ que el informe cita.
 | `README.md` | ✅ |
 | `reports/PI_report_en.md` | ✅ Y `PI_report_es.md` |
 | `metrics/metrics.csv` | ✅ 27 filas reales, con columna `template` |
+| `metrics/safety_log.csv` | ✅ Una fila por decisión, incluidas las permitidas |
+| `reports/uso_de_ia.md` | ✅ |
+| `docs/superpowers/specs/` | Diseño de los entregables de documentación |
 
 **Fase: el código y la documentación están completos.** Diez iteraciones registradas,
 61 tests offline en verde, y el experimento few-shot vs zero-shot corrido.
@@ -77,9 +82,10 @@ que el informe cita.
 | System prompt few-shot | 1446 tokens (medido con tiktoken) |
 | System prompt zero-shot | 860 tokens (medido) |
 | Los 5 ejemplos cuestan | **586 tokens**, y **+51,3% de costo total** por consulta |
-| Costo por consulta | ~$0,00026 |
-| Latencia | mediana 2486 ms (n=24), p25 2281, p75 3335 |
-| Latencia, outliers | 10518 y 23703 ms, ambos en primera llamada de una tanda |
+| Costo por consulta | ~$0,00027 few-shot · $0,00018 zero-shot · media del CSV $0,000227 |
+| Latencia, **desde `metrics.csv`** | mediana **1709 ms** (n=27), p25 1595, p75 2226 |
+| Latencia, fase exploratoria | mediana 2486 ms (n=24), con outliers de 10518 y 23703 ms |
+| ⚠️ | **Son dos poblaciones distintas.** Los valores exploratorios se transcribieron a mano antes de que existiera `metrics.py`; solo los del CSV se pueden recalcular desde la evidencia commiteada |
 | `TEMPERATURE` | 0.2 (bajada en la iter. 8; **sin efecto medido**, ver abajo) |
 | `MAX_TOKENS` | 300 |
 
@@ -124,7 +130,10 @@ token_estimator.py ─────────► config.py
 
 - **Solo `openai_client.py` toca la red.** `safety.py` le pide a él la llamada de
   moderación en vez de crear su propio cliente.
-- **Solo `metrics.py` escribe el CSV.**
+- **Solo `metrics.py` escribe CSVs.** Expone `append_row(path, columns, row)`, y
+  `safety.py` lo usa para su propio log en vez de reimplementar las trampas de
+  `newline=""` y del encabezado condicional. Resolverlas dos veces es como la segunda
+  copia termina sutilmente mal.
 - **`config.py` no crea clientes ni ejecuta lógica**, solo lee valores. Por eso se
   puede importar desde los tests sin API key.
 - **`log_metrics` recibe valores sueltos**, no el dataclass. Si importara
@@ -275,9 +284,9 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
 
 ---
 
-## Pendientes
+## Historial de decisiones cerradas
 
-### Inmediato
+### Cerradas en las iteraciones 8 y 9
 
 - [x] **C2, fallo parcial asumido.** Iter. 9 agregó una regla de desambiguación entre
       `escalate_to_supervisor` y `request_more_information` (eje **comprensión contra
