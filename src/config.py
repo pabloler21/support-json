@@ -16,6 +16,11 @@ MODEL = os.getenv("MODEL", "gpt-4o-mini")
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "300"))
 
+# Used by safety.py for the moderation layer. Kept configurable for the same
+# reason MODEL is: if the endpoint is renamed, that becomes an .env change
+# rather than a code change.
+MODERATION_MODEL = os.getenv("MODERATION_MODEL", "omni-moderation-latest")
+
 # Prices in USD per 1M tokens (gpt-4o-mini).
 # Input and output are billed at different rates, so they are kept apart:
 # metrics.py needs both to compute estimated_cost_usd.

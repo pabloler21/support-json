@@ -5,7 +5,13 @@ from time import perf_counter
 
 from openai import OpenAI, OpenAIError
 
-from src.config import MAX_TOKENS, MODEL, OPENAI_API_KEY, TEMPERATURE
+from src.config import (
+    MAX_TOKENS,
+    MODEL,
+    MODERATION_MODEL,
+    OPENAI_API_KEY,
+    TEMPERATURE,
+)
 
 if not OPENAI_API_KEY:
     raise RuntimeError(
@@ -28,6 +34,18 @@ class CompletionResult:
     tokens_completion: int
     total_tokens: int
     latency_ms: int
+
+
+@dataclass(frozen=True)
+class ModerationResult:
+    """The moderation endpoint's verdict on one piece of text.
+
+    Carries the flagged category names as well as the boolean, so the safety
+    log can record why something was rejected and not merely that it was.
+    """
+
+    flagged: bool
+    categories: tuple[str, ...]
 
 
 def create_chat_completion(messages: list[dict[str, str]]) -> CompletionResult:
@@ -82,3 +100,49 @@ def create_chat_completion(messages: list[dict[str, str]]) -> CompletionResult:
         raise RuntimeError(
             f"Unexpected response format from OpenAI API: {response}"
         ) from error
+
+
+def moderate(text: str) -> ModerationResult:
+    """Ask the moderation endpoint whether a piece of text is harmful.
+
+    Lives here rather than in safety.py because this module is the project's
+    only point of contact with the network. Two clients would mean two places
+    to look when the network misbehaves, and two configurations that can drift.
+
+    Measured limitation, and the reason safety.py needs a second layer: this
+    endpoint does not detect prompt injection. The injection used as test case
+    C5 comes back unflagged, with no category set.
+
+    Moderation calls are not billed, so nothing here is recorded in
+    metrics.csv.
+
+    Args:
+        text: The customer query, before it reaches the chat model.
+
+    Returns:
+        Whether the text was flagged, and the names of the categories that
+        triggered it.
+
+    Raises:
+        RuntimeError: If the API call fails, or the response carries no result.
+            Left to propagate rather than resolved into a decision here: if the
+            network is down the chat call cannot succeed either, so there is no
+            gap to fail open or closed about.
+    """
+    try:
+        response = client.moderations.create(model=MODERATION_MODEL, input=text)
+    except OpenAIError as error:
+        raise RuntimeError(f"OpenAI moderation call failed: {error}") from error
+
+    if not response.results:
+        raise RuntimeError(f"OpenAI moderation returned no results: {response}")
+
+    result = response.results[0]
+    # by_alias=True yields the API's own category names and, unlike the default,
+    # does not repeat a category under both its alias and its field name.
+    flagged_categories = tuple(
+        name
+        for name, is_set in result.categories.model_dump(by_alias=True).items()
+        if is_set
+    )
+    return ModerationResult(flagged=result.flagged, categories=flagged_categories)
