@@ -17,6 +17,31 @@ testable with no API key.
 
 import re
 import unicodedata
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from src.json_validator import Action, Category, SupportResponse
+from src.metrics import append_row
+
+SAFETY_LOG_PATH = Path(__file__).resolve().parent.parent / "metrics" / "safety_log.csv"
+
+SAFETY_COLUMNS = ("timestamp", "blocked", "layer", "reason", "query_preview")
+
+# Every decision is logged, not only the blocks. Without the allowed ones there
+# is no denominator, and "two blocked" is an anecdote where "two blocked out of
+# forty-seven" is a measurement.
+#
+# Only a prefix of the query is stored. A security log is where a customer's
+# personal data would quietly accumulate, and the first line is enough to audit
+# a decision. The trade-off is deliberate and belongs in the report.
+QUERY_PREVIEW_CHARS = 80
+
+# Verbatim from reports/contrato_json.md, section 6.
+BLOCKED_ANSWER = (
+    "La consulta fue bloqueada por la capa de seguridad y no se envió al "
+    "modelo. Derivá el caso a un supervisor para su revisión manual."
+)
 
 # Patterns are written in their normalised form: lowercase, unaccented, single
 # spaces. Writing "ignorá" here would never match, because the text being
@@ -116,3 +141,100 @@ def detect_injection(text: str) -> str | None:
         if pattern.search(normalized):
             return name
     return None
+
+
+@dataclass(frozen=True)
+class SafetyVerdict:
+    """What the safety layers decided about one query, and on what grounds.
+
+    Carries the layer and the reason as well as the boolean so the log can say
+    why a query was rejected. "Blocked" alone cannot be audited.
+    """
+
+    blocked: bool
+    layer: str
+    reason: str
+
+
+def check_query(text: str) -> SafetyVerdict:
+    """Run the query past both layers, cheapest first.
+
+    Heuristics go first because they are local, free and instant. Moderation
+    only runs if they let the query through: there is no point paying for a
+    round trip to confirm a rejection that already happened.
+
+    Args:
+        text: The raw query, before it is folded into a prompt.
+
+    Returns:
+        The verdict, with the layer and reason filled in when blocked.
+
+    Raises:
+        RuntimeError: If the moderation call fails. Deliberately not resolved
+            into a decision here: with the network down the chat call cannot
+            succeed either, so there is no gap to fail open or closed about.
+    """
+    pattern_name = detect_injection(text)
+    if pattern_name is not None:
+        return SafetyVerdict(blocked=True, layer="heuristics", reason=pattern_name)
+
+    # Imported inside the function on purpose. openai_client raises at import
+    # time when the API key is missing, so importing it at module level would
+    # make these heuristics untestable without credentials. A local import is
+    # normally a smell; here it is what preserves the offline test suite.
+    from src.openai_client import moderate
+
+    moderation = moderate(text)
+    if moderation.flagged:
+        return SafetyVerdict(
+            blocked=True, layer="moderation", reason=", ".join(moderation.categories)
+        )
+
+    return SafetyVerdict(blocked=False, layer="", reason="")
+
+
+def blocked_response() -> SupportResponse:
+    """Build the answer a blocked query returns.
+
+    The same four fields as any other answer, per contrato_json.md section 6:
+    downstream consumers always expect that shape, and an alternative error
+    form would break them.
+
+    confidence is 1.0 rather than 0.0, which is the easy mistake here. The field
+    rates how accurate the answer is, not how unusual the query was, and this
+    answer describes with certainty what happened.
+
+    Returns:
+        A validated response reporting the block.
+    """
+    return SupportResponse(
+        category=Category.OTHER,
+        answer=BLOCKED_ANSWER,
+        confidence=1.0,
+        actions=[Action.ESCALATE_TO_SUPERVISOR],
+    )
+
+
+def log_safety_decision(verdict: SafetyVerdict, query: str) -> None:
+    """Append one safety decision to metrics/safety_log.csv.
+
+    Kept out of metrics.csv, and not for tidiness: a blocked query was never
+    sent, so it has no token counts, no latency and no cost. Storing it there
+    would mean zeroes in those columns, and the latency average would then
+    include rows that never made a call.
+
+    Args:
+        verdict: What check_query decided.
+        query: The raw query. Only its first characters are stored.
+    """
+    append_row(
+        SAFETY_LOG_PATH,
+        SAFETY_COLUMNS,
+        (
+            datetime.now(UTC).isoformat(),
+            verdict.blocked,
+            verdict.layer,
+            verdict.reason,
+            query[:QUERY_PREVIEW_CHARS],
+        ),
+    )

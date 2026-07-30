@@ -49,6 +49,33 @@ class Cost(NamedTuple):
     total_usd: float
 
 
+def append_row(path: Path, columns: tuple[str, ...], row: tuple[object, ...]) -> None:
+    """Append one row to a CSV, writing the header only if the file is new.
+
+    Shared so that every CSV this project writes goes through one place. The
+    safety log has different columns and a different purpose, but the same two
+    traps, and solving them twice is how the second copy ends up subtly wrong.
+
+    Args:
+        path: The file to append to. Created, with its parent, if missing.
+        columns: The header, written only when the file did not exist.
+        row: The values, in the same order as columns.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Asked before opening: append mode creates the file, so checking afterwards
+    # would always find it there and the header would never be written.
+    is_new = not path.exists()
+
+    # newline="" is required with csv.writer on Windows. The writer emits \r\n
+    # itself, and text mode would translate that \n again, producing \r\r\n and
+    # a blank line between every row.
+    with open(path, "a", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        if is_new:
+            writer.writerow(columns)
+        writer.writerow(row)
+
+
 def estimate_cost(tokens_prompt: int, tokens_completion: int) -> Cost:
     """Price one call from its token counts.
 
@@ -101,16 +128,4 @@ def log_metrics(
         COST_FORMAT.format(cost.output_usd),
     )
 
-    METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Asked before opening: append mode creates the file, so checking afterwards
-    # would always find it there and the header would never be written.
-    is_new = not METRICS_PATH.exists()
-
-    # newline="" is required with csv.writer on Windows. The writer emits \r\n
-    # itself, and text mode would translate that \n again, producing \r\r\n and
-    # a blank line between every row.
-    with open(METRICS_PATH, "a", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        if is_new:
-            writer.writerow(COLUMNS)
-        writer.writerow(row)
+    append_row(METRICS_PATH, COLUMNS, row)

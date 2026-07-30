@@ -7,9 +7,9 @@ Run it from the project root:
 The validated JSON goes to stdout and the usage summary to stderr, so the
 output can be redirected to a file and stay valid JSON.
 
-Exit codes, so a calling script can tell the two failures apart:
+Exit codes, so a calling script can tell the failures apart:
 
-    0   the answer satisfies the contract
+    0   the answer satisfies the contract, or the query was safely blocked
     1   the API call failed: network, credentials, quota
     2   the call succeeded but the answer violates the contract
 
@@ -25,6 +25,7 @@ from src.json_validator import ContractViolationError, validate_response
 from src.metrics import estimate_cost, log_metrics
 from src.openai_client import create_chat_completion
 from src.prompt_builder import build_messages
+from src.safety import blocked_response, check_query, log_safety_decision
 
 
 def main():
@@ -36,6 +37,26 @@ def main():
     )
     parser.add_argument("query", help="The support query to answer.")
     args = parser.parse_args()
+
+    # Ahead of build_messages, because the whole point of blocking is to not
+    # spend the call. A block is a normal outcome, not a failure: it returns the
+    # same four fields as any answer and exits 0. Blocks are counted in
+    # safety_log.csv, which is why they need no exit code of their own.
+    try:
+        verdict = check_query(args.query)
+    except RuntimeError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    log_safety_decision(verdict, args.query)
+
+    if verdict.blocked:
+        print(blocked_response().model_dump_json(indent=2))
+        print(
+            f"blocked by {verdict.layer}: {verdict.reason} | no API call was made",
+            file=sys.stderr,
+        )
+        return
 
     messages = build_messages(args.query)
     try:
