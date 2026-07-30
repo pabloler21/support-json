@@ -1149,3 +1149,70 @@ de iteración que un 4/4 conseguido a fuerza de insistir.
 - [ ] Alucinación blanda: 7 apariciones. Sección propia en el informe.
 - [ ] Comparar few-shot contra zero-shot sobre las 5 consultas. **Ahora sí se puede: el
       prompt quedó definitivo.**
+
+---
+
+## Iteración 10 — 2026-07-30 — Few-shot contra zero-shot
+
+**El experimento que el enunciado pide para justificar la técnica de prompting.**
+Es la única iteración que no cambia nada: compara dos versiones del prompt que ya
+existen y están congeladas desde la iteración 9.
+
+**Preparación previa, en dos pasos que no son opcionales:**
+
+1. **`metrics.csv` no tenía forma de distinguir las corridas.** Sin una columna
+   que registre qué plantilla produjo cada fila, las 30 filas del barrido quedan
+   sin atribución y el experimento no se puede auditar desde el archivo que el
+   informe cita. Se agregó la columna `template`.
+2. **La CLI no permitía elegir plantilla.** `build_messages` ya aceptaba
+   `template_name`; se expuso como `--template`. Un experimento que solo corre
+   con un script descartable no cumple el requisito de cálculos reproducibles.
+
+Descubrir cualquiera de los dos *después* de gastar las llamadas habría obligado
+a repetirlas.
+
+### Lo que se compara
+
+| | `main_prompt.md` | `zero_shot_prompt.md` |
+|---|---|---|
+| `tokens_prompt` con C1 | 1484 | 898 |
+| Diferencia | — | **586, exactos** |
+| Los ejemplos son | **39,5%** del prompt | — |
+| Costo de input | **+65,3%** | baseline |
+| Costo total por consulta | **+46,6%** — $0,00027660 contra $0,00018870 | baseline |
+
+Los tres porcentajes responden preguntas distintas y es fácil confundirlos. El
+que describe *lo que cuesta la técnica* es **+46,6%**, porque es el costo total
+por consulta, que es lo que se factura.
+
+### Expectativa, escrita antes de correr
+
+**Hipótesis principal: los ejemplos son lo que enseñó la escala de
+`confidence`.** El bloque `CONFIANZA` define las tres bandas en prosa en las dos
+plantillas, pero solo el few-shot muestra números concretos asociados a casos.
+Si la hipótesis es correcta, el zero-shot debería degradarse **primero en
+`confidence`**, no en `category`.
+
+| Consulta | Few-shot | Zero-shot |
+|---|---|---|
+| C1 | pasa | pasa — el caso base es fácil |
+| C2 | **falla en `actions`** (3 de 4 desde la iteración 9) | falla, y además `confidence` fuera de banda |
+| C3 | pasa | pasa |
+| C4 | pasa | riesgo en `category`: la regla de intención principal es prosa en las dos, pero el quinto ejemplo la demuestra solo en el few-shot |
+| C5 | pasa completo | **riesgo de formato**: contestar en prosa en vez de JSON |
+
+**Predicción agregada:** few-shot 4 de 5, zero-shot 2 o 3 de 5.
+
+**El modo de fallo que más importa no es equivocarse de categoría, sino romper
+el formato.** Una respuesta en prosa es inservible para cualquier sistema
+downstream; una categoría equivocada al menos es procesable. Por eso se cuenta
+aparte cuántas respuestas fueron JSON válido del contrato.
+
+### Protocolo
+
+- 5 consultas × 2 plantillas × **n=3** = 30 llamadas, ~$0,007.
+- Texto exacto de `consultas_de_prueba.md`, sin modificar una palabra.
+- Criterio de éxito: las cinco condiciones definidas en ese archivo.
+- **Control:** para la misma consulta, la diferencia de `tokens_prompt` entre
+  ramas tiene que ser **exactamente 586**. Si no lo es, se cargó la plantilla
+  equivocada y la corrida no es interpretable.
