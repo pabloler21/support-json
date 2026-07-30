@@ -12,12 +12,20 @@ campos para la consola de un agente: `category`, `answer`, `confidence`,
 `actions`. Una sola llamada al modelo resuelve tres trabajos: clasificar,
 redactar y recomendar.
 
+Hay **dos entradas** —una CLI y un endpoint HTTP con su interfaz web— y ninguna
+de las dos tiene lógica propia: las dos traducen a `pipeline.answer_query()` y
+traducen de vuelta. Un `RuntimeError` es exit 1 para la CLI y HTTP 502 para la
+API. Como el orden de los pasos existe una sola vez, las dos entradas no pueden
+contradecirse: una consulta bloqueada devuelve los mismos cuatro campos, con exit
+0 y con HTTP 200.
+
 La arquitectura sigue una idea: **cada módulo es una frontera que recibe algo
 menos confiable y devuelve algo más confiable.** Después de `json_validator`,
 `category` **no puede** valer un string arbitrario, y esa garantía es lo que
 permite que todo lo que sigue deje de defenderse solo. Dos invariantes sostienen
-el peso: `openai_client.py` es el único módulo que toca la red, y ningún módulo
-con lógica lo importa — por eso los **61 tests corren sin credenciales**.
+el peso: `openai_client.py` es el único módulo que sale a la red, y ningún módulo
+con lógica lo importa a nivel de módulo — por eso los **88 tests corren sin
+credenciales**.
 
 ## 2. Prompting: técnica e iteración
 

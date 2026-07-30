@@ -21,7 +21,7 @@ Los nombres vienen del enunciado y **no se negocian** — la rúbrica los busca 
 
 | Entregable | Ruta exacta |
 |---|---|
-| Script ejecutable | `src/run_query.py` |
+| Script ejecutable | `src/run_query.py` — la fila es un **OR** con `app/endpoint.py`, y ya se cumplía solo con esto. `app/main.py` se agregó después, y **no cubre ningún requisito faltante** |
 | Plantilla de prompt | `prompts/main_prompt.md` |
 | Métricas por ejecución | `metrics/metrics.csv` |
 | Informe (1-2 páginas) | `reports/PI_report_en.md` **y** `reports/PI_report_es.md` |
@@ -34,19 +34,21 @@ esos nombres exactos; las tres últimas se agregaron:
 
 ```
 timestamp, tokens_prompt, tokens_completion, total_tokens, latency_ms,
-estimated_cost_usd, input_cost_usd, output_cost_usd, template
+estimated_cost_usd, input_cost_usd, output_cost_usd, template, source
 ```
 
 ⚠️ La API de OpenAI devuelve `prompt_tokens` / `completion_tokens` — **orden invertido**.
 El mapeo ya está hecho en `openai_client.py`, en el dataclass `CompletionResult`.
 
-Se agregaron tres columnas al final: `input_cost_usd`, `output_cost_usd` y
-`template`. El enunciado lista las 6 como *"contenido mínimo"*, así que agregar está
-permitido, y un test fija que las seis originales sigan primero y en orden.
+Se agregaron cuatro columnas al final: `input_cost_usd`, `output_cost_usd`,
+`template` y `source`. El enunciado lista las 6 como *"contenido mínimo"*, así que
+agregar está permitido, y un test fija que las seis originales sigan primero y en orden.
 
-⚠️ **`template` no es cosmética.** Sin ella, las corridas de few-shot y zero-shot
-quedan indistinguibles en el CSV y el experimento no se puede auditar desde el archivo
-que el informe cita.
+⚠️ **`template` y `source` no son cosméticas.** Sin `template`, las corridas de
+few-shot y zero-shot quedan indistinguibles. Sin `source` (`cli` / `api`), las filas de
+las mediciones del informe y las que genera cualquiera probando la interfaz web se
+mezclan, y los números publicados dejan de poder recalcularse. **El informe cita las
+filas con `source=cli`.**
 
 ---
 
@@ -57,12 +59,18 @@ que el informe cita.
 | `src/config.py` | ✅ Variables de entorno y precios |
 | `src/prompt_builder.py` | ✅ Carga plantilla y arma `messages` |
 | `src/openai_client.py` | ✅ Llamada + `usage` + latencia + JSON mode |
-| `src/run_query.py` | ✅ Integrado, con flag `--template` |
+| `src/pipeline.py` | ✅ **El orden de los pasos, compartido por las dos entradas** |
+| `src/run_query.py` | ✅ Entrada CLI: argparse, stdout, exit codes |
 | `src/json_validator.py` | ✅ Contrato con pydantic |
-| `src/metrics.py` | ✅ Costo, CSV y `append_row` compartido |
+| `src/metrics.py` | ✅ Costo, CSV, `append_row` compartido y lock de escritura |
 | `src/safety.py` | ✅ Capas 1 y 2, log aparte |
 | `src/token_estimator.py` | ✅ tiktoken, 7/7 exacto contra `usage` |
+| `app/main.py` | ✅ Entrada HTTP: rutas, status codes, sirve los estáticos |
+| `app/schemas.py` | ✅ Request y envelope de respuesta |
+| `app/static/` | ✅ Consola de dos pestañas, sin build ni framework |
 | `tests/test_core.py` | ✅ 61 tests, todos offline |
+| `tests/test_pipeline.py` | ✅ 12 tests del orden de los pasos |
+| `tests/test_api.py` | ✅ 15 tests de la traducción a HTTP |
 | `README.md` | ✅ |
 | `reports/PI_report_en.md` | ✅ Y `PI_report_es.md` |
 | `metrics/metrics.csv` | ✅ 27 filas reales, con columna `template` |
@@ -106,7 +114,18 @@ uv run python -m src.run_query "la consulta entre comillas"
 - Ejecutar parado dentro de `src/` → el mismo error, porque `-m` resuelve contra el
   directorio actual. **Verificar `pwd` antes.**
 
+La interfaz web, desde la raíz:
+
+```bash
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+`/` es la consola de dos pestañas; `/docs` es el contrato navegable, generado por
+FastAPI desde `json_validator.py`. **Bindear siempre a `127.0.0.1`, nunca a
+`0.0.0.0`.**
+
 Tests: `uv run pytest` desde la raíz (`pythonpath = ["."]` ya está en `pyproject.toml`).
+**88 tests, todos offline.**
 
 El JSON sale por **stdout** y las métricas por **stderr**, para que
 `> salida.json` produzca JSON puro.
@@ -116,11 +135,15 @@ El JSON sale por **stdout** y las métricas por **stderr**, para que
 ## Arquitectura
 
 ```
-run_query.py          orquesta, cero lógica propia
-   ├─ safety.py ──────────┐
-   ├─ prompt_builder.py   ├──► openai_client.py ──► config.py
-   ├─ json_validator.py   │      (único que toca la red)
-   └─ metrics.py ─────────────► config.py (precios)
+run_query.py ─┐   CLI:  argparse, stdout/stderr, exit codes 0/1/2
+app/main.py  ─┤   HTTP: cuerpo JSON, status 200/422/500/502
+              │   ambas son TRADUCTORES, sin lógica propia
+              ▼
+         pipeline.py    answer_query(query, template, source) -> QueryOutcome
+              ├─ safety.py ──────────┐
+              ├─ prompt_builder.py   ├──► openai_client.py ──► config.py
+              ├─ json_validator.py   │      (único que SALE a la red)
+              └─ metrics.py ─────────────► config.py (precios)
 
 token_estimator.py ─────────► config.py
    ▲ fuera del camino de producción: experimentos y tests
@@ -128,8 +151,20 @@ token_estimator.py ─────────► config.py
 
 ### Invariantes que hay que preservar
 
-- **Solo `openai_client.py` toca la red.** `safety.py` le pide a él la llamada de
-  moderación en vez de crear su propio cliente.
+- **Solo `openai_client.py` hace llamadas salientes.** `safety.py` le pide a él la
+  llamada de moderación en vez de crear su propio cliente. FastAPI recibe conexiones
+  entrantes, que es otra cosa y no viola esto.
+- ⚠️ **Nadie importa `openai_client` a nivel de módulo.** Levanta `RuntimeError` al
+  importarse sin API key. `safety.py` y `pipeline.py` lo importan **dentro de la
+  función**; es lo que sostiene los 88 tests offline, y hay un test en
+  `test_pipeline.py` que lo verifica leyendo el fuente.
+- ⚠️ **`pipeline.py` usa `from __future__ import annotations`.** La anotación
+  `CompletionResult | None` nombra un tipo que solo existe en `openai_client`. Si se
+  quita ese import, la anotación se evalúa de verdad y cae la suite entera. Hay un
+  test que lo fija.
+- **El orden de los pasos vive solo en `pipeline.py`.** Duplicarlo en la entrada HTTP
+  fue explícitamente descartado: es donde viven las dos invariantes caras (seguridad
+  antes de construir el prompt, métricas antes de validar).
 - **Solo `metrics.py` escribe CSVs.** Expone `append_row(path, columns, row)`, y
   `safety.py` lo usa para su propio log en vez de reimplementar las trampas de
   `newline=""` y del encabezado condicional. Resolverlas dos veces es como la segunda

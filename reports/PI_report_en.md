@@ -11,12 +11,20 @@ A support query goes in as free text; a four-field JSON object comes out for an
 agent's console: `category`, `answer`, `confidence`, `actions`. One model call
 does three jobs — classify, draft, recommend.
 
+There are **two entry points** — a CLI and an HTTP endpoint with a web console —
+and neither holds logic of its own: both translate into
+`pipeline.answer_query()` and translate back. A `RuntimeError` is exit code 1 for
+the CLI and HTTP 502 for the API. Because the order of the steps exists once,
+the two cannot contradict each other: a blocked query returns the same four
+fields, with exit code 0 and with HTTP 200.
+
 The architecture follows one idea: **each module is a boundary that receives
 something less trustworthy and returns something more trustworthy.** After
 `json_validator`, `category` *cannot* hold an arbitrary value, which is what lets
 everything downstream stop defending itself. Two invariants carry the weight:
-`openai_client.py` is the only module that touches the network, and no module
-holding logic imports it — which is why all **61 tests run offline**.
+`openai_client.py` is the only module that reaches out to the network, and no
+module holding logic imports it at module level — which is why all **88 tests
+run offline**.
 
 ## 2. Prompting: technique and iteration
 
