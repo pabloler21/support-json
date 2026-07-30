@@ -1216,3 +1216,125 @@ aparte cuántas respuestas fueron JSON válido del contrato.
 - **Control:** para la misma consulta, la diferencia de `tokens_prompt` entre
   ramas tiene que ser **exactamente 586**. Si no lo es, se cargó la plantilla
   equivocada y la corrida no es interpretable.
+
+### Resultados
+
+**Control cumplido con exactitud:** la diferencia de `tokens_prompt` dio **586 en
+las cuatro consultas** que llegaron al modelo.
+
+| | few-shot | zero-shot | diferencia |
+|---|---|---|---|
+| C1 | 1484 | 898 | 586 |
+| C2 | 1468 | 882 | 586 |
+| C3 | 1471 | 885 | 586 |
+| C4 | 1480 | 894 | 586 |
+
+| Consulta | few-shot | zero-shot |
+|---|---|---|
+| C1 | 3 de 3 | 3 de 3 |
+| C2 | 2 de 3 — falta `request_more_information` | **0 de 3 — `confidence` fuera de banda** |
+| C3 | 3 de 3 | 3 de 3 |
+| C4 | 3 de 3 | 3 de 3 |
+| C5 | bloqueada por `safety.py` | bloqueada por `safety.py` |
+
+### La hipótesis principal se confirmó
+
+**El zero-shot se degradó exactamente donde se predijo: en `confidence`, no en
+`category`.** Las categorías fueron correctas en las 24 corridas de las dos
+ramas. La única diferencia de comportamiento apareció en la calibración.
+
+Y el detalle es más nítido de lo esperado: **el zero-shot devolvió
+`confidence: 0.5` en las tres corridas de C2**, exactamente el valor del medio de
+la escala. La expectativa pide menos de 0,50, así que las tres quedan fuera de
+banda por una centésima.
+
+Eso es precisamente lo que predice la hipótesis. Las dos plantillas describen las
+tres bandas en prosa con idéntico texto, pero solo el few-shot muestra **números
+concretos asociados a casos** —`0.3` para una consulta vaga, `0.8` para una
+reproducible—. Sin esos anclajes, el modelo no elige mal: **se va al punto medio,
+que es lo que hace un estimador sin información**. El few-shot, con los mismos
+ejemplos, bajó a 0,20 en la iteración 8.
+
+**Los ejemplos no enseñan el formato: enseñan la escala.**
+
+### La predicción sobre el formato se refutó
+
+Se predijo que el zero-shot correría riesgo de contestar en prosa y romper el
+contrato, y que ese sería el modo de fallo más grave.
+
+**Falso. 15 de 15 respuestas válidas en las dos ramas.** Cero violaciones de
+contrato en las 30 corridas.
+
+La explicación es que el formato **no lo sostiene el prompt**, lo sostiene
+`response_format={"type": "json_object"}` en la llamada a la API. El modo JSON
+garantiza sintaxis válida a nivel del servicio, y los vocabularios cerrados los
+verifica `json_validator.py` después. El prompt aporta mucho menos a la
+conformidad de formato de lo que se venía asumiendo.
+
+**Esto obliga a matizar la justificación de la técnica escrita en la iteración
+1.** Se eligió few-shot argumentando que el problema era "conformidad de esquema,
+no dificultad de razonamiento". La conformidad de esquema resulta estar cubierta
+por el parámetro de la API. Lo que los ejemplos aportan de verdad, y que ahora
+está medido, es **la calibración de `confidence`**.
+
+### El costo de la técnica, medido
+
+| | few-shot | zero-shot |
+|---|---|---|
+| n | 12 | 12 |
+| `tokens_prompt` medio | 1476 | 890 |
+| `tokens_completion` medio | 76 | 72 |
+| Costo medio | $0,00026706 | $0,00017656 |
+| **La técnica cuesta** | **+51,3%** | baseline |
+
+El costo extra es **enteramente de input**: los completions salieron
+prácticamente iguales (76 contra 72 tokens).
+
+La estimación previa a correr fue +46,6%, calculada suponiendo 90 tokens de
+salida. Los reales fueron ~74, y con menos output el peso relativo del input
+sube. **La estimación erró por 5 puntos, en la dirección esperable.**
+
+### Latencia: sin efecto claro
+
+| | mediana | mín | máx |
+|---|---|---|---|
+| few-shot | 1760 ms | 1337 | 3896 |
+| zero-shot | 1686 ms | 1078 | 2054 |
+
+Los rangos **se superponen sustancialmente** y n=12 por rama. Siguiendo la regla
+que este proyecto ya aprendió dos veces por las malas, **no se afirma que el
+few-shot sea más lento**.
+
+Lo que sí se puede decir: **586 tokens de input adicionales cuestan 51% más
+dinero y ningún tiempo medible.** Es coherente con lo establecido desde la
+iteración 3, que a esta escala el tiempo lo domina el costo fijo del round-trip.
+
+### C5 quedó fuera de la comparación, y es correcto que así sea
+
+Con `safety.py` integrado, la capa 1 detecta la inyección y **la consulta nunca
+llega al modelo**, en las dos ramas. El resultado es simétrico y no informa nada
+sobre el prompt.
+
+No es una pérdida: la resistencia de la capa 3 ya está medida en la iteración 9,
+donde C5 pasó completo sin filtrar el system prompt, con `safety.py` todavía
+vacío. Lo que este barrido muestra es que **la capa 1 hace su trabajo antes de
+gastar la llamada**, que es lo que se le pide.
+
+### Conclusión
+
+**Few-shot 4 de 5 (C2 parcial), zero-shot 3 de 5**, con la diferencia
+concentrada por completo en la calibración de `confidence`.
+
+La técnica se conserva. La justificación, sin embargo, **cambia respecto de lo
+que se escribió en la iteración 1**: no se sostiene por conformidad de formato
+—que el modo JSON de la API ya resuelve— sino por calibración. A $0,00009 extra
+por consulta, es un precio razonable por el único campo del contrato que expresa
+incertidumbre.
+
+### Pendientes
+
+- [x] Comparar few-shot contra zero-shot sobre las 5 consultas.
+- [ ] C2: 1 de 3 sigue escalando en lugar de preguntar. Acumulado con la
+      iteración 9: **5 de 7**. Fallo parcial asumido.
+- [ ] Registro y destinatario en `RESTRICCIONES`.
+- [ ] Alucinación blanda: 7 apariciones.
