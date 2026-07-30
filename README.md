@@ -13,7 +13,10 @@ enunciado: no es multi-tarea concurrente, es una tarea que devuelve tres cosas.
 ## ▶ Probarlo en un minuto
 
 ```bash
-uv sync && cp .env.example .env      # y completá OPENAI_API_KEY
+git clone https://github.com/pabloler21/support-json.git
+cd support-json
+uv sync
+cp .env.example .env          # y completá OPENAI_API_KEY adentro
 uv run uvicorn app.main:app --port 8000
 ```
 
@@ -67,10 +70,13 @@ cada banda de confianza y los casos de prueba— está en
 Requiere **Python 3.12+** y una clave de la API de OpenAI.
 
 ```bash
-git clone <url-del-repo>
-cd support_json
+git clone https://github.com/pabloler21/support-json.git
+cd support-json
 uv sync
 ```
+
+> ⚠️ La carpeta se llama **`support-json`**, con guion: es el nombre del
+> repositorio, y es el que `git clone` crea.
 
 Sin `uv`:
 
