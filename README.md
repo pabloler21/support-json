@@ -110,6 +110,35 @@ uv run python -m src.run_query --template zero_shot_prompt.md "la consulta"
 Existe para que la comparación few-shot contra zero-shot del informe se pueda
 reproducir. El default es `main_prompt.md`.
 
+### La interfaz web
+
+Además de la CLI, el proyecto se puede usar desde el navegador:
+
+```bash
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+| URL | Qué es |
+|---|---|
+| <http://127.0.0.1:8000/> | La consola: se pega un ticket y se ve el veredicto con sus métricas |
+| <http://127.0.0.1:8000/docs> | El contrato, navegable y ejecutable, **generado desde `json_validator.py`** |
+
+La consola tiene dos pestañas. La segunda corre la misma consulta contra las dos
+plantillas en paralelo y muestra el delta de tokens y de costo, así la
+comparación few-shot contra zero-shot del informe se reproduce con un click.
+
+> `/docs` no es documentación escrita a mano: FastAPI la deriva del mismo modelo
+> pydantic que valida la salida del modelo. Los vocabularios, los rangos de
+> `confidence` y el máximo de tres acciones aparecen ahí porque están en el
+> código que los hace cumplir.
+
+**La clave de la API nunca sale del proceso servidor.** El navegador solo conoce
+`/api/query`. El servidor bindea a `127.0.0.1`, no a `0.0.0.0`.
+
+Las dos entradas comparten `src/pipeline.py`, así que no pueden divergir: una
+consulta bloqueada devuelve los mismos cuatro campos y **HTTP 200**, igual que la
+CLI sale con código 0 en ese caso.
+
 ### Códigos de salida
 
 | Código | Significado |
@@ -132,8 +161,13 @@ pide el enunciado; las tres últimas se agregaron.
 
 ```
 timestamp, tokens_prompt, tokens_completion, total_tokens, latency_ms,
-estimated_cost_usd, input_cost_usd, output_cost_usd, template
+estimated_cost_usd, input_cost_usd, output_cost_usd, template, source
 ```
+
+`source` vale `cli` o `api` según de qué entrada vino la consulta. Sin esa
+columna, las filas de las mediciones del informe y las que genera cualquiera
+probando la interfaz quedan indistinguibles, y los números publicados dejan de
+poder recalcularse. El informe cita **las filas con `source=cli`**.
 
 Los conteos de tokens salen de `response.usage`, que es lo que factura OpenAI,
 **nunca de una estimación**. Es lo que hace que los costos sean auditables.
@@ -165,9 +199,16 @@ latencia incluiría filas que jamás hicieron una llamada.
 uv run pytest
 ```
 
-**61 tests, y todos corren sin API key y sin red.** Esa propiedad no es
-casualidad: ningún módulo con lógica importa `openai_client`, que exige la clave
-al importarse. Es lo que hace barata toda la fase de pruebas.
+**88 tests, y todos corren sin API key y sin red.** Esa propiedad no es
+casualidad: ningún módulo con lógica importa `openai_client` a nivel de módulo, y
+ese archivo exige la clave al importarse. Es lo que hace barata toda la fase de
+pruebas.
+
+| Archivo | Qué cubre |
+|---|---|
+| `tests/test_core.py` | 61 · los cuatro módulos con lógica: contrato, métricas, prompts, tokens |
+| `tests/test_pipeline.py` | 12 · **el orden de los pasos**, que hasta ahora vivía dentro de `main()` y no lo verificaba nadie |
+| `tests/test_api.py` | 15 · la traducción de excepciones a códigos HTTP, con el pipeline sustituido |
 
 Los casos de rechazo del contrato son los de la sección 8 de
 [`contrato_json.md`](reports/contrato_json.md), uno por regla, así que la salida
@@ -178,16 +219,25 @@ de pytest se lee como la especificación.
 ## Arquitectura
 
 ```
-run_query.py                    orquestador, sin lógica propia
-    ├── safety.py               capas 1 y 2, antes de gastar la llamada
-    ├── prompt_builder.py       lee prompts/*.md
-    ├── openai_client.py        ÚNICO que toca la red  ──> config.py
-    ├── json_validator.py       el contrato, con pydantic
-    └── metrics.py              costo y CSV            ──> config.py
+run_query.py  ─┐                CLI:  argumentos, stdout, códigos de salida
+app/main.py   ─┤                HTTP: cuerpo JSON, códigos de estado
+               │
+               └──> pipeline.py     el orden de los pasos, compartido
+                      ├── safety.py         capas 1 y 2, antes de gastar la llamada
+                      ├── prompt_builder.py lee prompts/*.md
+                      ├── openai_client.py  ÚNICO que sale a la red ──> config.py
+                      ├── json_validator.py el contrato, con pydantic
+                      └── metrics.py        costo y CSV             ──> config.py
 
 token_estimator.py              fuera del camino de producción: tiktoken,
                                 para medir prompts sin gastar llamadas
 ```
+
+**Las dos entradas son traductores y nada más.** Reciben una consulta en el
+vocabulario de su transporte, llaman a `answer_query()` y traducen de vuelta:
+`RuntimeError` es exit 1 para la CLI y HTTP 502 para la API; una violación del
+contrato es exit 2 y HTTP 500. El orden de los pasos existe una sola vez, así
+que las dos entradas no pueden contradecirse.
 
 Cada archivo es una frontera que recibe algo menos confiable y devuelve algo más
 confiable. Después de `validate_response`, `response.category` **no puede** valer
@@ -197,11 +247,13 @@ un string arbitrario: no es improbable, es imposible.
 
 | Regla | Qué se rompe si no se cumple |
 |---|---|
-| Solo `openai_client.py` toca la red | Dos clientes, dos lugares donde mirar cuando la red falla |
+| Solo `openai_client.py` hace llamadas **salientes** | Dos clientes, dos lugares donde mirar cuando la red falla. FastAPI recibe conexiones entrantes, que es otra cosa |
+| Nadie importa `openai_client` a nivel de módulo | Caen los 88 tests offline. `safety.py` y `pipeline.py` lo importan **dentro de la función**, y hay un test que lo verifica |
 | Solo `metrics.py` escribe CSVs | Filas con formatos distintos y un encabezado que deja de describir el contenido |
 | `config.py` no crea clientes ni ejecuta lógica | Deja de importarse sin API key, y con él caen los tests |
 | `log_metrics` recibe valores sueltos, no el dataclass | Testear una multiplicación exigiría credenciales |
-| El orquestador no tiene lógica propia | La lógica queda donde no se puede testear sin red |
+| El orden de los pasos vive solo en `pipeline.py` | Dos copias de la secuencia, y la segunda termina sutilmente mal |
+| Las entradas no tienen lógica propia | La lógica queda donde no se puede testear sin red |
 
 ---
 
@@ -237,6 +289,19 @@ Están medidas y documentadas, no escondidas.
   siempre"*, el modelo reconoce en el `answer` que falta información pero a veces
   emite `escalate_to_supervisor` en lugar de `request_more_information`.
   Acumulado sobre las mediciones: **5 de 7 correctas**.
+- **Escalar arrastra la categoría a `other`.** Si el ticket pide hablar con un
+  supervisor, el modelo elige primero la acción y después mueve la categoría a
+  `other`, aunque el tema sea claro. Medido: *"Es la tercera vez que escribo por
+  el mismo problema de facturación y nadie me responde. Quiero hablar con un
+  supervisor"* devuelve `other` donde corresponde `billing` — la regla de
+  intención principal dice clasificar por lo que el cliente quiere resolver, y
+  eso es la facturación; el supervisor es el mecanismo.
+  **Y lo devuelve con `confidence` 0.90**, más alto que en casos que acierta.
+  Es el mismo acoplamiento que produce el fallo de C2: `other` es la única
+  categoría que el prompt ata a una acción obligatoria, y el modelo aplica ese
+  par al revés. No se corrigió a propósito: tocar el prompt ahora invalidaría el
+  experimento few-shot contra zero-shot, que está medido contra esta versión.
+
 - **Alucinación blanda.** El modelo referencia información que no tiene:
   *"departamento de recursos humanos"*, *"las políticas de reembolso"*. No inventa
   datos duros —montos, plazos, saldos— pero presupone áreas y documentos.

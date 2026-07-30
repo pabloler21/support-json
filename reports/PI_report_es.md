@@ -12,12 +12,20 @@ campos para la consola de un agente: `category`, `answer`, `confidence`,
 `actions`. Una sola llamada al modelo resuelve tres trabajos: clasificar,
 redactar y recomendar.
 
+Hay **dos entradas** —una CLI y un endpoint HTTP con su interfaz web— y ninguna
+de las dos tiene lógica propia: las dos traducen a `pipeline.answer_query()` y
+traducen de vuelta. Un `RuntimeError` es exit 1 para la CLI y HTTP 502 para la
+API. Como el orden de los pasos existe una sola vez, las dos entradas no pueden
+contradecirse: una consulta bloqueada devuelve los mismos cuatro campos, con exit
+0 y con HTTP 200.
+
 La arquitectura sigue una idea: **cada módulo es una frontera que recibe algo
 menos confiable y devuelve algo más confiable.** Después de `json_validator`,
 `category` **no puede** valer un string arbitrario, y esa garantía es lo que
 permite que todo lo que sigue deje de defenderse solo. Dos invariantes sostienen
-el peso: `openai_client.py` es el único módulo que toca la red, y ningún módulo
-con lógica lo importa — por eso los **61 tests corren sin credenciales**.
+el peso: `openai_client.py` es el único módulo que sale a la red, y ningún módulo
+con lógica lo importa a nivel de módulo — por eso los **88 tests corren sin
+credenciales**.
 
 ## 2. Prompting: técnica e iteración
 
@@ -76,12 +84,16 @@ que hace auditables los costos. `tiktoken` solo se usa para medir prompts sin
 gastar llamadas; su fórmula de envoltura, incluidos los nombres de rol, coincidió
 con `prompt_tokens` **exacto en 7 de 7** llamadas reales.
 
-| | `metrics.csv` commiteado | Fase exploratoria |
+| | `metrics.csv`, filas con `source=cli` | Fase exploratoria |
 |---|---|---|
-| n | 27 | 24 |
-| Costo por consulta, media | $0,00022701 | — |
-| Latencia, mediana | **1709 ms** (p25 1595, p75 2226) | 2486 ms (p25 2281, p75 3335) |
+| n | 29 | 24 |
+| Costo por consulta, media | $0,00023058 | — |
+| Latencia, mediana | **1709 ms** (p25 1595, p75 2225) | 2486 ms (p25 2281, p75 3335) |
 | Rango | 1078 – 4411 ms | hasta 23703 ms |
+
+La columna `source` distingue las corridas de la CLI de las que produce la
+interfaz web, para que estos números se sigan recalculando con un filtro en vez
+de exigir un archivo congelado.
 
 **Son dos poblaciones distintas y solo la primera es auditable.** Los valores de
 la fase exploratoria se transcribieron a mano desde la terminal durante las
@@ -154,6 +166,19 @@ un log aparte — nunca se envió, así que no tiene tokens, latencia ni costo.
 `answer` que falta información y a veces escala en vez de preguntar. Una regla en
 prosa lo llevó de 0 de 4 a 3 de 4, y se conserva como arreglo parcial — dar por
 resuelto un 3 de 4 sería acomodar el criterio al resultado.
+
+**Escalar arrastra la categoría**, y es la misma causa. Una batería de ocho
+tickets corrida contra el endpoint dio 7 de 8; el que falla pide hablar con un
+supervisor por un problema de facturación y vuelve como `other` en lugar de
+`billing`. `other` es la única categoría que el prompt ata a una acción
+obligatoria, así que el modelo aplica ese par en la dirección inversa: elige
+escalar y arrastra la categoría detrás. **Lo devuelve con `confidence` 0.90**,
+por encima de casos que sí acierta — la calibración no distingue este error.
+
+No se corrigió, y el motivo es metodológico: cambiar el prompt ahora obligaría a
+replicar la regla en la plantilla zero-shot y aun así dejaría la comparación de
+la sección 5 medida contra un prompt que ya no existe. **Subir de 7 a 8 sobre
+ocho no vale invalidar el hallazgo central del informe.**
 
 **Alucinación blanda**, siete apariciones: referencias a un "departamento de
 recursos humanos" o a "las políticas de reembolso". Nunca datos duros como montos

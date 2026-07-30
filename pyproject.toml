@@ -5,14 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "openai>=2.48.0",
     "pydantic>=2.13.4",
     "python-dotenv>=1.0.1",
     "tiktoken>=0.13.0",
+    "uvicorn[standard]>=0.52.0",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "httpx2>=2.9.1",
     "pytest>=9.1.1",
     "ruff>=0.16.0",
 ]

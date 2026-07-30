@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Consola de soporte</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <div class="wordmark">
+          <h1>Asistente de soporte al cliente</h1>
+          <p>
+            Una llamada resuelve tres trabajos: clasificar, redactar y recomendar.
+          </p>
+        </div>
+        <nav class="tabs" role="tablist">
+          <button
+            class="tab"
+            role="tab"
+            id="tab-console"
+            aria-controls="view-console"
+            aria-selected="true"
+          >
+            Consola
+          </button>
+          <button
+            class="tab"
+            role="tab"
+            id="tab-compare"
+            aria-controls="view-compare"
+            aria-selected="false"
+          >
+            Comparar plantillas
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- ---------- Consola ---------- -->
+      <section id="view-console" role="tabpanel" aria-labelledby="tab-console">
+        <div class="console">
+          <form id="console-form">
+            <label class="label" for="query">Ticket entrante</label>
+            <textarea
+              id="query"
+              placeholder="Pegá acá la consulta del cliente, tal como llegó."
+            ></textarea>
+
+            <div class="controls">
+              <select id="template" aria-label="Plantilla de prompt">
+                <option value="main_prompt.md">Plantilla few-shot (default)</option>
+                <option value="zero_shot_prompt.md">Plantilla zero-shot</option>
+              </select>
+              <button class="go" type="submit" id="analyze">Analizar</button>
+            </div>
+
+            <div class="samples">
+              <span class="label">Casos de prueba del informe</span>
+              <div class="sample-list" id="samples"></div>
+            </div>
+          </form>
+
+          <div>
+            <span class="label">Veredicto</span>
+            <div id="console-output">
+              <div class="panel panel-empty">
+                Sin consultas todavía. Pegá un ticket o elegí un caso de prueba.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- Comparación ---------- -->
+      <section
+        id="view-compare"
+        role="tabpanel"
+        aria-labelledby="tab-compare"
+        hidden
+      >
+        <p style="margin-top: 0; color: var(--ink-muted); max-width: 62ch">
+          La misma consulta contra las dos plantillas, en paralelo. Son dos
+          llamadas reales: quedan dos filas en <code>metrics.csv</code> con
+          <code>source=api</code>. Las plantillas difieren en exactamente 586
+          tokens, que es el bloque de ejemplos.
+        </p>
+
+        <form class="compare-input" id="compare-form">
+          <textarea
+            id="compare-query"
+            placeholder="Una consulta para correr contra las dos plantillas."
+          ></textarea>
+          <button class="go" type="submit" id="compare-go">Comparar</button>
+        </form>
+
+        <div class="compare-grid">
+          <div>
+            <div class="branch-head">Few-shot <span>main_prompt.md</span></div>
+            <div id="compare-few">
+              <div class="panel panel-empty">Sin correr</div>
+            </div>
+          </div>
+          <div>
+            <div class="branch-head">
+              Zero-shot <span>zero_shot_prompt.md</span>
+            </div>
+            <div id="compare-zero">
+              <div class="panel panel-empty">Sin correr</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="compare-delta"></div>
+      </section>
+    </main>
+
+    <footer>
+      <span
+        >Los tokens salen de <code>response.usage</code>, que es lo que factura
+        OpenAI — nunca de una estimación.</span
+      >
+      <span><a href="/docs">Documentación del contrato →</a></span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -11,6 +11,7 @@ multiplication would then require credentials.
 """
 
 import csv
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -37,7 +38,15 @@ COLUMNS = (
     "input_cost_usd",
     "output_cost_usd",
     "template",
+    "source",
 )
+
+# Serialises writes so two rows cannot interleave. The API serves its routes
+# from a threadpool, so two requests can reach append_row at the same time, and
+# this file is the evidence behind every number in the report. The check for a
+# missing file is inside the lock as well: outside it, two threads could both
+# find the file absent and both write the header.
+_WRITE_LOCK = threading.Lock()
 
 # Enough decimals to keep a single query visible. One costs about $0.00026, and
 # the output column alone lands near $0.00005, which str() would write in
@@ -66,18 +75,21 @@ def append_row(path: Path, columns: tuple[str, ...], row: tuple[object, ...]) ->
         row: The values, in the same order as columns.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Asked before opening: append mode creates the file, so checking afterwards
-    # would always find it there and the header would never be written.
-    is_new = not path.exists()
 
-    # newline="" is required with csv.writer on Windows. The writer emits \r\n
-    # itself, and text mode would translate that \n again, producing \r\r\n and
-    # a blank line between every row.
-    with open(path, "a", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        if is_new:
-            writer.writerow(columns)
-        writer.writerow(row)
+    with _WRITE_LOCK:
+        # Asked before opening: append mode creates the file, so checking
+        # afterwards would always find it there and the header would never be
+        # written.
+        is_new = not path.exists()
+
+        # newline="" is required with csv.writer on Windows. The writer emits
+        # \r\n itself, and text mode would translate that \n again, producing
+        # \r\r\n and a blank line between every row.
+        with open(path, "a", encoding="utf-8", newline="") as file:
+            writer = csv.writer(file)
+            if is_new:
+                writer.writerow(columns)
+            writer.writerow(row)
 
 
 def estimate_cost(tokens_prompt: int, tokens_completion: int) -> Cost:
@@ -108,6 +120,7 @@ def log_metrics(
     total_tokens: int,
     latency_ms: int,
     template: str,
+    source: str = "cli",
 ) -> None:
     """Append one run to metrics/metrics.csv, writing the header if it is new.
 
@@ -122,6 +135,11 @@ def log_metrics(
         latency_ms: Wall-clock duration of the call.
         template: Which prompt file produced the run. Two prompts writing
             indistinguishable rows would make the comparison unauditable.
+        source: Which entry point made the call, "cli" or "api". Same reasoning
+            as template, applied to the caller instead of the prompt: without
+            it, the runs behind the report and the ones an evaluator makes
+            through the web interface would sit in the file indistinguishable.
+            Defaults to "cli", which is what every row predating the API was.
     """
     cost = estimate_cost(tokens_prompt, tokens_completion)
     row = (
@@ -134,6 +152,7 @@ def log_metrics(
         COST_FORMAT.format(cost.input_usd),
         COST_FORMAT.format(cost.output_usd),
         template,
+        source,
     )
 
     append_row(METRICS_PATH, COLUMNS, row)
