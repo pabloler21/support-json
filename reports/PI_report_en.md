@@ -159,6 +159,20 @@ that information is missing, then sometimes escalates instead of asking. A prose
 rule moved it from 0 of 4 to 3 of 4, and it is kept as a partial fix — counting
 3 of 4 as resolved would be fitting the criterion to the result.
 
+**Escalation drags the category with it**, from the same cause. A battery of
+eight tickets run against the endpoint scored 7 of 8; the failure asks to speak
+to a supervisor about a billing problem and comes back as `other` instead of
+`billing`. `other` is the only category the prompt binds to a mandatory action,
+so the model applies that pair backwards: it picks escalation and pulls the
+category along. **It returns that with `confidence` 0.90**, above cases it gets
+right — the calibration does not catch this error.
+
+It was left unfixed for a methodological reason: changing the prompt now would
+mean replicating the rule in the zero-shot template, and would still leave
+section 5's comparison measured against a prompt that no longer exists. **Going
+from 7 to 8 out of eight is not worth invalidating the report's central
+finding.**
+
 **Soft hallucination**, seven occurrences: references to a "human resources
 department" or "the refund policy". Never hard data such as amounts or balances,
 but presupposed documents and teams.

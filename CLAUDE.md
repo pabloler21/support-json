@@ -353,6 +353,13 @@ Ninguna bloquea la entrega. Todas están documentadas en el README y en el infor
 - **Registro y destinatario en `RESTRICCIONES`.** El modelo alterna voseo y tuteo, y
       algunas respuestas están redactadas hacia el cliente final en lugar del agente,
       que es lo que el prompt establece en su primera línea.
+- **Escalar arrastra la categoría a `other`.** Un ticket de facturación que pide
+      supervisor vuelve como `other` en vez de `billing`, **con `confidence` 0,90**.
+      Misma causa que C2: `other` es la única categoría atada a una acción
+      obligatoria en el prompt, y el modelo aplica ese par al revés. Medido en la
+      batería del 2026-07-30 (7/8). ⚠️ **No corregir tocando el prompt:** obligaría
+      a replicar la regla en `zero_shot_prompt.md` y aun así dejaría la comparación
+      de la iteración 10 medida contra un prompt inexistente.
 - **Alucinación blanda — 7 apariciones.** Referencia información que no tiene
       ("departamento de recursos humanos", "las políticas de reembolso"). No inventa
       datos duros, pero presupone documentos y áreas.

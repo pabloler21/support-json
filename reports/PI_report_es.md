@@ -167,6 +167,19 @@ un log aparte — nunca se envió, así que no tiene tokens, latencia ni costo.
 prosa lo llevó de 0 de 4 a 3 de 4, y se conserva como arreglo parcial — dar por
 resuelto un 3 de 4 sería acomodar el criterio al resultado.
 
+**Escalar arrastra la categoría**, y es la misma causa. Una batería de ocho
+tickets corrida contra el endpoint dio 7 de 8; el que falla pide hablar con un
+supervisor por un problema de facturación y vuelve como `other` en lugar de
+`billing`. `other` es la única categoría que el prompt ata a una acción
+obligatoria, así que el modelo aplica ese par en la dirección inversa: elige
+escalar y arrastra la categoría detrás. **Lo devuelve con `confidence` 0.90**,
+por encima de casos que sí acierta — la calibración no distingue este error.
+
+No se corrigió, y el motivo es metodológico: cambiar el prompt ahora obligaría a
+replicar la regla en la plantilla zero-shot y aun así dejaría la comparación de
+la sección 5 medida contra un prompt que ya no existe. **Subir de 7 a 8 sobre
+ocho no vale invalidar el hallazgo central del informe.**
+
 **Alucinación blanda**, siete apariciones: referencias a un "departamento de
 recursos humanos" o a "las políticas de reembolso". Nunca datos duros como montos
 o saldos, pero sí documentos y áreas presupuestos.

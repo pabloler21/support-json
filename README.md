@@ -289,6 +289,19 @@ Están medidas y documentadas, no escondidas.
   siempre"*, el modelo reconoce en el `answer` que falta información pero a veces
   emite `escalate_to_supervisor` en lugar de `request_more_information`.
   Acumulado sobre las mediciones: **5 de 7 correctas**.
+- **Escalar arrastra la categoría a `other`.** Si el ticket pide hablar con un
+  supervisor, el modelo elige primero la acción y después mueve la categoría a
+  `other`, aunque el tema sea claro. Medido: *"Es la tercera vez que escribo por
+  el mismo problema de facturación y nadie me responde. Quiero hablar con un
+  supervisor"* devuelve `other` donde corresponde `billing` — la regla de
+  intención principal dice clasificar por lo que el cliente quiere resolver, y
+  eso es la facturación; el supervisor es el mecanismo.
+  **Y lo devuelve con `confidence` 0.90**, más alto que en casos que acierta.
+  Es el mismo acoplamiento que produce el fallo de C2: `other` es la única
+  categoría que el prompt ata a una acción obligatoria, y el modelo aplica ese
+  par al revés. No se corrigió a propósito: tocar el prompt ahora invalidaría el
+  experimento few-shot contra zero-shot, que está medido contra esta versión.
+
 - **Alucinación blanda.** El modelo referencia información que no tiene:
   *"departamento de recursos humanos"*, *"las políticas de reembolso"*. No inventa
   datos duros —montos, plazos, saldos— pero presupone áreas y documentos.
