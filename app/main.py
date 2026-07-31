@@ -10,10 +10,12 @@ two entry points cannot drift apart.
 The API key never leaves this process. The browser only ever knows /api/query.
 """
 
+import time
+from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.schemas import QueryMetrics, QueryRequest, QueryResponse, SafetyDecision
@@ -33,6 +35,66 @@ app = FastAPI(
         "es la especificación ejecutable, no una copia escrita a mano."
     ),
 )
+
+
+# A rate limit is the one guard that belongs in the transport rather than in
+# the pipeline. safety.py reads the query; this reads a clock. It also cannot
+# apply to the CLI, where one command is one query typed by a person.
+#
+# What it protects is money: every call to /api/query spends about $0.00027 and
+# nothing else in the system counts how often that happens. 30 per minute is
+# roughly ten times what a person clicking through the console reaches and a
+# hundredth of what a loop does, which caps the damage at ~$0.008 per minute.
+RATE_LIMIT = 30
+WINDOW_S = 60
+
+# ponytail: one global bucket, not one per client. The server binds to
+# 127.0.0.1, so every request already comes from the same address and a dict
+# keyed by IP would hold exactly one entry. Move to dict[str, deque] the day
+# this is exposed beyond localhost.
+_hits: deque[float] = deque()
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Cap how often /api/query can be called, in a sliding one-minute window.
+
+    Only that path. Static files and /docs cost nothing to serve, and a 429
+    there would break the console without protecting anything.
+
+    No lock is needed, which is worth being explicit about because the route
+    below deliberately is not async. This function is, so it runs on the event
+    loop, and there is no await between reading the deque and appending to it:
+    no other request can interleave. The route runs in a threadpool instead,
+    which is why metrics.py needs its own lock and this does not.
+    """
+    if request.url.path == "/api/query":
+        now = time.monotonic()
+
+        # Drop what has aged out. A sliding window rather than a fixed one:
+        # a fixed window is two lines shorter but lets 2x the limit through at
+        # the boundary between windows, which is the burst worth stopping.
+        while _hits and now - _hits[0] > WINDOW_S:
+            _hits.popleft()
+
+        if len(_hits) >= RATE_LIMIT:
+            # Retry-After says when the oldest hit expires, which is the
+            # earliest moment a slot actually frees up.
+            retry_after = int(WINDOW_S - (now - _hits[0])) + 1
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": (
+                        f"Límite de {RATE_LIMIT} consultas por minuto alcanzado. "
+                        f"Reintentá en {retry_after} segundos."
+                    )
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        _hits.append(now)
+
+    return await call_next(request)
 
 
 def _to_response(outcome: QueryOutcome) -> QueryResponse:
@@ -78,6 +140,12 @@ def _to_response(outcome: QueryOutcome) -> QueryResponse:
             )
         },
         422: {"description": "El cuerpo del pedido no cumple el esquema."},
+        429: {
+            "description": (
+                f"Se superaron las {RATE_LIMIT} consultas por minuto. La cabecera "
+                "`Retry-After` indica en cuántos segundos se libera un lugar."
+            )
+        },
         500: {"description": "El modelo respondió, pero violando el contrato."},
         502: {"description": "Falló la llamada a la API de OpenAI."},
     },

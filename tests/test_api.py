@@ -11,6 +11,7 @@ failure, sharing the pipeline bought nothing.
 """
 
 import json
+import time
 from dataclasses import dataclass
 
 import pytest
@@ -59,6 +60,18 @@ def blocked() -> QueryOutcome:
         cost=None,
         template="main_prompt.md",
     )
+
+
+@pytest.fixture(autouse=True)
+def empty_rate_limit_bucket():
+    """Start every test with the rate-limit window empty.
+
+    The bucket is module state, so without this the tests would share one
+    budget and start depending on the order they run in.
+    """
+    main._hits.clear()
+    yield
+    main._hits.clear()
 
 
 @pytest.fixture
@@ -184,6 +197,31 @@ def test_a_missing_template_becomes_422(client, pipeline):
     reply = client.post("/api/query", json={"query": "El cobro no coincide."})
 
     assert reply.status_code == 422
+
+
+def test_the_rate_limit_stops_the_call_that_exceeds_it(client, pipeline):
+    """The limit exists to cap spending, so what matters is that the request
+    over the line never reaches the pipeline, not merely that it returns 429."""
+    body = {"query": "El cobro no coincide."}
+    for _ in range(main.RATE_LIMIT):
+        assert client.post("/api/query", json=body).status_code == 200
+
+    pipeline["seen"] = {}
+    reply = client.post("/api/query", json=body)
+
+    assert reply.status_code == 429
+    assert pipeline["seen"] == {}
+    assert int(reply.headers["Retry-After"]) <= main.WINDOW_S
+
+
+def test_the_rate_limit_applies_only_to_the_paid_path(client, pipeline):
+    """Serving the console costs nothing, so exhausting the budget must not
+    take the interface down with it."""
+    main._hits.extend([time.monotonic()] * main.RATE_LIMIT)
+
+    assert client.post("/api/query", json={"query": "hola"}).status_code == 429
+    assert client.get("/").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
 
 
 def test_the_console_is_served_at_the_root(client):

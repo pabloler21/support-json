@@ -163,6 +163,14 @@ en pantalla, así el experimento central del informe se reproduce con un click.
 **La clave de la API nunca sale del proceso servidor.** El navegador solo conoce
 `/api/query`. El servidor bindea a `127.0.0.1`, no a `0.0.0.0`.
 
+`/api/query` está limitado a **30 consultas por minuto**, en ventana deslizante.
+Es la única ruta que gasta dinero —cada llamada cuesta ~$0,00027— y ninguna otra
+capa cuenta la frecuencia: `safety.py` mira el contenido de la consulta, no
+cuántas veces llega. Pasado el límite devuelve `429` con la cabecera
+`Retry-After`; la consola y `/docs` siguen respondiendo, porque servirlas no
+cuesta nada. **La CLI no está limitada:** el límite vive en la capa HTTP, y un
+comando por consulta ya es el ritmo de una persona.
+
 ---
 
 ### 2. La CLI, para scripts y redirección
