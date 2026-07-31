@@ -65,15 +65,15 @@ filas con `source=cli`.**
 | `src/metrics.py` | ✅ Costo, CSV, `append_row` compartido y lock de escritura |
 | `src/safety.py` | ✅ Capas 1 y 2, log aparte |
 | `src/token_estimator.py` | ✅ tiktoken, 7/7 exacto contra `usage` |
-| `app/main.py` | ✅ Entrada HTTP: rutas, status codes, sirve los estáticos |
+| `app/main.py` | ✅ Entrada HTTP: rutas, status codes, estáticos, y el rate limit de 30/min sobre `/api/query` (middleware, **no aplica a la CLI**) |
 | `app/schemas.py` | ✅ Request y envelope de respuesta |
 | `app/static/` | ✅ Consola de dos pestañas, sin build ni framework |
 | `tests/test_core.py` | ✅ 61 tests, todos offline |
 | `tests/test_pipeline.py` | ✅ 12 tests del orden de los pasos |
-| `tests/test_api.py` | ✅ 15 tests de la traducción a HTTP |
+| `tests/test_api.py` | ✅ 17 tests de la traducción a HTTP y del rate limit |
 | `README.md` | ✅ |
 | `reports/PI_report_en.md` | ✅ Y `PI_report_es.md` |
-| `metrics/metrics.csv` | ✅ 27 filas reales, con columna `template` |
+| `metrics/metrics.csv` | ✅ 54 filas reales — 29 `cli` (las que cita el informe) y 25 `api` |
 | `metrics/safety_log.csv` | ✅ Una fila por decisión, incluidas las permitidas |
 | `reports/uso_de_ia.md` | ✅ |
 | `docs/superpowers/specs/` | Diseño de los entregables de documentación |
@@ -90,8 +90,8 @@ filas con `source=cli`.**
 | System prompt few-shot | 1446 tokens (medido con tiktoken) |
 | System prompt zero-shot | 860 tokens (medido) |
 | Los 5 ejemplos cuestan | **586 tokens**, y **+51,3% de costo total** por consulta |
-| Costo por consulta | ~$0,00027 few-shot · $0,00018 zero-shot · media del CSV $0,000227 |
-| Latencia, **desde `metrics.csv`** | mediana **1709 ms** (n=27), p25 1595, p75 2226 |
+| Costo por consulta | ~$0,00027 few-shot · $0,00018 zero-shot · media de `source=cli` $0,000231 |
+| Latencia, **desde `metrics.csv`** | mediana **1709 ms** (n=29, `source=cli`), p25 1595, p75 2225 |
 | Latencia, fase exploratoria | mediana 2486 ms (n=24), con outliers de 10518 y 23703 ms |
 | ⚠️ | **Son dos poblaciones distintas.** Los valores exploratorios se transcribieron a mano antes de que existiera `metrics.py`; solo los del CSV se pueden recalcular desde la evidencia commiteada |
 | `TEMPERATURE` | 0.2 (bajada en la iter. 8; **sin efecto medido**, ver abajo) |
@@ -125,7 +125,7 @@ FastAPI desde `json_validator.py`. **Bindear siempre a `127.0.0.1`, nunca a
 `0.0.0.0`.**
 
 Tests: `uv run pytest` desde la raíz (`pythonpath = ["."]` ya está en `pyproject.toml`).
-**88 tests, todos offline.**
+**90 tests, todos offline.**
 
 El JSON sale por **stdout** y las métricas por **stderr**, para que
 `> salida.json` produzca JSON puro.
@@ -156,7 +156,7 @@ token_estimator.py ─────────► config.py
   entrantes, que es otra cosa y no viola esto.
 - ⚠️ **Nadie importa `openai_client` a nivel de módulo.** Levanta `RuntimeError` al
   importarse sin API key. `safety.py` y `pipeline.py` lo importan **dentro de la
-  función**; es lo que sostiene los 88 tests offline, y hay un test en
+  función**; es lo que sostiene los 90 tests offline, y hay un test en
   `test_pipeline.py` que lo verifica leyendo el fuente.
 - ⚠️ **`pipeline.py` usa `from __future__ import annotations`.** La anotación
   `CompletionResult | None` nombra un tipo que solo existe en `openai_client`. Si se
