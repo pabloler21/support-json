@@ -27,6 +27,16 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 app = FastAPI(
     title="Asistente de soporte al cliente",
     version="1.0.0",
+    # Without this openapi.json carries no host, and a client generated from it
+    # -- Postman, or any codegen -- builds its base URL as an empty string and
+    # every request comes out as http:///api/query. The absolute entry goes
+    # first because that is the one such a client picks up. The relative one is
+    # second so /docs still works when the server was started on another port,
+    # which happens whenever 8000 is already taken.
+    servers=[
+        {"url": "http://127.0.0.1:8000", "description": "Local, el puerto por defecto"},
+        {"url": "/", "description": "El mismo origen, para cualquier otro puerto"},
+    ],
     description=(
         "Recibe una consulta de soporte y devuelve el contrato JSON de cuatro "
         "campos, junto con lo que costó producirlo.\n\n"
