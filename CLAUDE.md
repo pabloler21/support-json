@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Contexto del proyecto para retomar el trabajo en una sesión nueva. Última
-actualización: 2026-07-30.
+actualización: 2026-07-31.
 
 ---
 
@@ -77,9 +77,16 @@ filas con `source=cli`.**
 | `metrics/safety_log.csv` | ✅ Una fila por decisión, incluidas las permitidas |
 | `reports/uso_de_ia.md` | ✅ |
 | `docs/superpowers/specs/` | Diseño de los entregables de documentación |
+| `docs/guia_de_estudio.md` | ✅ Guía pedagógica de 2689 líneas: orden de lectura, recorrido línea por línea, método para el próximo agente. ⚠️ **Está en `.gitignore` a propósito** (línea 22), no es entregable |
 
 **Fase: el código y la documentación están completos.** Diez iteraciones registradas,
-61 tests offline en verde, y el experimento few-shot vs zero-shot corrido.
+90 tests offline en verde, y el experimento few-shot vs zero-shot corrido.
+
+**Verificado el 2026-07-31 en un clon limpio del repo público:** `git clone` sin
+credenciales, `uv sync`, `uv run pytest` → 90 passed sin `.env`, la CLI falla con
+mensaje útil y exit 1, `/`, `/docs`, `/openapi.json` y `/static/` responden 200, y el
+rate limit dispara en la consulta 31. Los 7 entregables están en sus rutas exactas y no
+hay ninguna clave en ningún archivo.
 
 ### Números de referencia
 
@@ -124,6 +131,12 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 FastAPI desde `json_validator.py`. **Bindear siempre a `127.0.0.1`, nunca a
 `0.0.0.0`.**
 
+⚠️ **Mientras se desarrolla, agregar `--reload`.** Sin eso uvicorn carga los módulos
+una vez al arrancar y **no vuelve a leer los archivos nunca**: se editó `app/main.py`,
+se recargó el navegador y el servidor seguía sirviendo el código viejo. Costó una vuelta
+entera de diagnóstico. Para la entrega el README lo deja sin `--reload`, que es lo
+correcto en producción.
+
 Tests: `uv run pytest` desde la raíz (`pythonpath = ["."]` ya está en `pyproject.toml`).
 **90 tests, todos offline.**
 
@@ -135,8 +148,10 @@ El JSON sale por **stdout** y las métricas por **stderr**, para que
 ## Arquitectura
 
 ```
+                  rate_limit (middleware)  ← SOLO HTTP, 30/min sobre /api/query
+                          │
 run_query.py ─┐   CLI:  argparse, stdout/stderr, exit codes 0/1/2
-app/main.py  ─┤   HTTP: cuerpo JSON, status 200/422/500/502
+app/main.py  ─┤   HTTP: cuerpo JSON, status 200/422/429/500/502
               │   ambas son TRADUCTORES, sin lógica propia
               ▼
          pipeline.py    answer_query(query, template, source) -> QueryOutcome
@@ -175,6 +190,21 @@ token_estimator.py ─────────► config.py
   `openai_client`, testear una multiplicación exigiría credenciales.
 - **`json_validator.py`, `metrics.py`, `prompt_builder.py` y `token_estimator.py` se
   testean sin API key.** Esa propiedad es lo que hace barata la fase de tests.
+- ⚠️ **El rate limit es la única defensa que vive en el transporte, y tiene que quedar
+  ahí.** El test que lo decide: `safety.py` funciona con el servidor apagado (la CLI no
+  tiene HTTP y sí tiene seguridad); un rate limit no podría. `safety.py` mira el
+  **contenido** de la consulta, el rate limit mira un **reloj**. Antes de mover algo a un
+  middleware, preguntarse: *¿esto tendría sentido si no hubiera servidor?*
+- ⚠️ **El middleware `rate_limit` no lleva `Lock`, y es correcto.** Es `async`, corre en
+  el event loop de un solo hilo, y entre el `popleft` y el `append` **no hay ningún
+  `await`** donde otra corrutina pueda intercalarse. `metrics.py` sí lo necesita porque
+  la ruta está declarada con `def` y corre en un threadpool. No "arreglar" esto agregando
+  un lock: el comentario en `app/main.py` explica por qué.
+- ⚠️ **`FastAPI(servers=[...])` no es decorativo.** Sin ese bloque, `openapi.json` no
+  lleva host y cualquier cliente generado desde él —Postman, codegen, un SDK— arma la URL
+  base como string vacío y pide a `http:///api/query`. La entrada absoluta va primera
+  porque es la que toma el cliente; la relativa `"/"` va segunda para que `/docs` siga
+  andando si uvicorn arrancó en otro puerto.
 
 ### Decisiones tomadas
 
@@ -191,6 +221,35 @@ token_estimator.py ─────────► config.py
   en las dos ramas). **Lo que los ejemplos compran es la calibración de `confidence`**:
   el zero-shot devuelve 0.5 en C2, el punto medio, contra 0,20 del few-shot. Cuesta
   +51,3% por consulta. CoT y self-consistency siguen descartadas por costo y latencia.
+- **Rate limit de 30/min sobre `/api/query`**, ventana deslizante con `collections.deque`,
+  sin dependencia nueva. La justificación **no** es "el corrector lo va a probar" —eso no
+  se sostiene, la consigna no lo menciona— sino que cada llamada gasta ~$0,00027 y
+  **ninguna otra capa cuenta la frecuencia**. Se descartó `slowapi` (dependencia nueva
+  para 15 líneas) y el contador de ventana fija (2 líneas menos, pero deja pasar 2x el
+  límite en el cruce de ventanas).
+
+### ⚠️ Structured Outputs: lo que se haría distinto hoy
+
+Verificado el 2026-07-31 contra la documentación oficial y **probado localmente**:
+
+- **`response_format={"type": "json_object"}` es hoy *legacy*.** OpenAI recomienda
+  **Structured Outputs** (`json_schema` con `strict: true`), donde el decodificador
+  *físicamente no puede* emitir un token que viole el esquema. No es una verificación
+  posterior: es una restricción en el muestreo.
+- **`SupportResponse` ya es compatible con el modo estricto**, comprobado ejecutando
+  `openai.lib._pydantic.to_strict_json_schema(SupportResponse)`. `extra="forbid"` se
+  convierte en `additionalProperties: false` y los `StrEnum` en listas `enum`. Las
+  decisiones que se tomaron por otras razones resultaron ser las que hace falta.
+- **El SDK instalado (`openai 2.48.0`) ya expone** `client.chat.completions.parse` y
+  `client.responses.parse`, verificado por introspección.
+- ⚠️ **Pero `json_validator.py` seguiría haciendo falta igual.** La regla de acciones sin
+  duplicados vive en un `@field_validator` y **no se puede expresar en JSON Schema**. Y
+  el soporte de `maxLength`, `minimum` y `maxItems` dentro del modo estricto está en
+  movimiento: históricamente se ignoraban, hay indicios de que se amplió, **no se pudo
+  confirmar de forma concluyente**. Tratarlo como no garantizado.
+- **No migrar en este proyecto.** Cambiaría la rama medida en la iteración 10 y dejaría
+  la comparación del informe apuntando a una configuración que ya no existe. Es la
+  decisión correcta **para el próximo**, no para este.
 
 ---
 
@@ -219,6 +278,7 @@ token_estimator.py ─────────► config.py
 | `reports/consultas_de_prueba.md` | Las 5 consultas fijas (C1-C5) con su resultado esperado escrito **antes** de correr. |
 | `reports/iteraciones.md` | La bitácora. **10 iteraciones** con mediciones, hipótesis que se cayeron y decisiones. Es la fuente de la sección de prompting del informe. |
 | `reports/uso_de_ia.md` | Cómo se usaron herramientas de IA y cómo influyeron en las decisiones técnicas. Incluye las 7 afirmaciones del asistente que las mediciones desmintieron. |
+| `docs/guia_de_estudio.md` | **No commiteado** (`.gitignore:22`). Guía pedagógica: por qué el primer archivo a leer es `contrato_json.md` y no código, recorrido línea por línea de los 11 módulos, por qué cada librería y qué se descartó, y el método de 10 pasos para el próximo agente. Sus 36 citas de línea y 27 enlaces externos fueron verificados. |
 
 ⚠️ **Limitación conocida y asumida:** los vocabularios están duplicados entre el prompt
 (`.md`) y el contrato. Si se edita uno hay que editar el otro. Mejora futura: generar
@@ -274,6 +334,16 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
   tiempo lo domina el costo fijo del round-trip, no los tokens en ninguna dirección.
 - **Afirmar que los finales de línea CRLF contaminarían el conteo de tokens.** Falso:
   Python normaliza `\r\n` a `\n` al leer en modo texto.
+- **⚠️ Recalcular una métrica sobre una población distinta y creer que hay una
+  regresión.** Al verificar los CSV el 2026-07-31 se promediaron **las 17 filas
+  `source=cli` con `template=main_prompt.md`** y dio +52,2%, contra el +51,3% publicado.
+  No era una regresión: el informe cita **el barrido de la iteración 10**, que son 12
+  filas filtradas por timestamp (`19:00` y `19:01`), y ese filtro está escrito en
+  `iteraciones.md`. Con el filtro correcto reproduce exacto.
+  **Antes de gritar "los números cambiaron", buscar cómo se calculó el número original.**
+- **Dos documentos que redondean el mismo valor distinto parecen contradecirse.** El p75
+  daba 2225,5 ms: los informes lo truncaron a 2225 y este archivo lo redondeó a 2226. No
+  eran datos distintos. Se alineó con los informes, que son el entregable.
 
 ### De diseño del contrato
 
@@ -307,6 +377,20 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
   máquina de quien clone el repo, no en la propia.
 - **Olvidar que `print()` redirigido usa el locale.** El JSON salía en cp1252 al hacer
   `> archivo`. Corregido con `sys.stdout.reconfigure(encoding="utf-8")` en `main()`.
+- **Escribir un test que siempre pasa.** Se escribió
+  `assert "src.openai_client" not in str(pipeline.__dict__.get("CompletionResult", ""))`.
+  `.get` con default `""` hace que la aserción sea verdadera pase lo que pase. Se
+  reemplazó por dos tests que verifican el mecanismo real. **Un test que no puede fallar
+  no es un test.**
+- **⚠️ El servidor no relee los archivos.** Se editó `app/main.py`, se reimportó la
+  colección en Postman y seguía fallando: el proceso de uvicorn había cargado el módulo
+  6 minutos antes del cambio. Se diagnosticó comparando `StartTime` del proceso contra
+  `LastWriteTime` del archivo. **Ante "cambié el código y no pasa nada", verificar
+  primero cuándo arrancó el proceso.**
+- **Un puerto lo escucha un solo proceso.** `WinError 10048` al levantar en el 8000: un
+  uvicorn del día anterior seguía vivo en background. `Ctrl+C` en la terminal propia no
+  lo mata. Se busca con
+  `Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Get-Process -Id $_.OwningProcess }`.
 
 ### De proceso
 
@@ -316,6 +400,23 @@ Esto es lo que hizo que las mediciones sirvieran. Respetarlo.
   sin que se notara hasta revisar que la latencia coincidía al milisegundo.
 - **Correr un test con el texto de la consulta modificado.** Invalida la comparación
   contra la expectativa. Usar siempre el texto exacto de `consultas_de_prueba.md`.
+- **⚠️ Verificar el README leyéndolo en vez de ejecutándolo.** El quickstart omitía el
+  `git clone` y además decía `cd support_json` (el nombre de la carpeta local, con guion
+  bajo) cuando el repo es `support-json` (con guion). **Seguirlo literalmente fallaba en
+  el segundo comando.** Era invisible desde adentro porque en la máquina del autor la
+  carpeta ya existe. **La prueba real: abrir una carpeta vacía y ejecutar los comandos
+  tal como están escritos.** Se hizo, y ahí apareció.
+- **Probar con `curl` desde Git Bash manda los acentos en cp1252** y el servidor rechaza
+  el cuerpo con "There was an error parsing the body". Y el `/tmp` del Python de Windows
+  **no es** el `/tmp` de Git Bash. Para probar HTTP, usar Python + `httpx`.
+- **Contar campos de un CSV con `awk -F,` da falsos positivos.** Marcó 7 filas
+  "malformadas" en `safety_log.csv`; `csv.reader` mostró que estaban bien: las comas
+  viven **dentro** del campo `query_preview` entrecomillado. Para verificar un CSV, usar
+  un parser de CSV.
+- **Gastar llamadas reales para probar algo que no las necesita.** Para verificar el rate
+  limit alcanza con mandar un cuerpo inválido (`{"query": ""}`): el middleware corre
+  **antes** que la validación de pydantic, así que consume presupuesto sin llamar a
+  OpenAI y sin escribir una fila en ningún CSV. 31 requests, costo cero.
 
 ---
 
@@ -366,6 +467,12 @@ Ninguna bloquea la entrega. Todas están documentadas en el README y en el infor
 - **Vocabulario duplicado** entre el prompt y `json_validator.py`. Mejora futura:
       generar esa sección del prompt desde las constantes de Python. Los `description=`
       de los campos del modelo son la materia prima para eso.
+      **El camino concreto ya está identificado** (2026-07-31): iterar sobre los
+      `StrEnum` con `", ".join(c.value for c in Category)`. Con eso los enums pasan a ser
+      la única fuente y alimentan el validator, el prompt y el esquema de Structured
+      Outputs. ⚠️ **No aplicarlo en este proyecto:** obligaría a replicar el cambio en
+      `zero_shot_prompt.md` y dejaría la comparación de la iteración 10 medida contra un
+      prompt que ya no existe.
 
 ---
 
